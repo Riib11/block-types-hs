@@ -25,13 +25,21 @@ source-repository head
 
 library
   exposed-modules:
-      Lib
+      Language.BlockTypes.Context
+      Language.BlockTypes.Inference
+      Language.BlockTypes.Normalization
+      Language.BlockTypes.Rewriting
+      Language.BlockTypes.Semantics
+      Language.BlockTypes.Syntax
+      Language.BlockTypes.Unification
   other-modules:
       Paths_block_types_hs
   hs-source-dirs:
       src
   build-depends:
       base >=4.7 && <5
+    , containers
+    , mtl
   default-language: Haskell2010
 
 executable block-types-hs-exe
@@ -44,6 +52,8 @@ executable block-types-hs-exe
   build-depends:
       base >=4.7 && <5
     , block-types-hs
+    , containers
+    , mtl
   default-language: Haskell2010
 
 test-suite block-types-hs-test
@@ -57,4 +67,6 @@ test-suite block-types-hs-test
   build-depends:
       base >=4.7 && <5
     , block-types-hs
+    , containers
+    , mtl
   default-language: Haskell2010
