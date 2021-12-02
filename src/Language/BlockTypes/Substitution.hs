@@ -1,29 +1,24 @@
 {-# LANGUAGE LambdaCase #-}
 module Language.BlockTypes.Substitution where
 
-import Language.BlockTypes.Syntax
+import Language.BlockTypes.Syntax as Syntax
+import Language.BlockTypes.Normalization as Normalization
 import qualified Data.Map as Map
 
-joinVarSub :: VarSub -> VarSub -> VarSub
-joinVarSub sigma1 sigma2 = sigma1 <> Map.map (applyVarSub sigma1) sigma2
+joinSub :: Sub -> Sub -> Sub
+joinSub = undefined
+-- joinSub sigma1 sigma2 = sigma1 <> Map.map (applySub sigma1) sigma2
 
-applyVarSub :: VarSub -> Syn -> Syn
-applyVarSub sigma = \case
-  Uni -> Uni
-  Pi x alpha beta -> Pi x (applyVarSub sigma alpha) (applyVarSub sigma beta)
-  Lam x alpha b -> Lam x (applyVarSub sigma alpha) (applyVarSub sigma b)
-  Var x -> maybe (Var x) id (Map.lookup x sigma)
-  App f a -> App (applyVarSub sigma f) (applyVarSub sigma a)
-  Let x alpha a b -> Let x (applyVarSub sigma alpha) (applyVarSub sigma a) (applyVarSub sigma b)
-  Hole h Nothing -> Hole h (Just sigma)
-  Hole h (Just sigma') -> Hole h (Just $ joinVarSub sigma sigma')
-
-applyHoleSub :: HoleSub -> Syn -> Syn
-applyHoleSub sigma = \case
-  Uni -> Uni
-  Pi x alpha beta -> Pi x (applyHoleSub sigma alpha) (applyHoleSub sigma beta)
-  Lam x alpha b -> Lam x (applyHoleSub sigma alpha) (applyHoleSub sigma b)
-  Var x -> Var x
-  App f a -> App (applyHoleSub sigma f) (applyHoleSub sigma a)
-  Let x alpha a b -> Let x (applyHoleSub sigma alpha) (applyHoleSub sigma a) (applyHoleSub sigma b)
-  Hole h mb_sigma' -> maybe (Hole h mb_sigma') (maybe id applyVarSub mb_sigma') (Map.lookup h sigma)
+applySub :: Sub -> Syn -> Syn
+applySub = undefined
+-- applySub sigma gamma = \case
+--   Uni -> Uni
+--   Pi x alpha beta -> Pi x (applySub sigma gamma alpha) (applySub sigma gamma beta)
+--   Lam x alpha b -> Lam x (applySub sigma gamma alpha) (applySub sigma gamma b)
+--   Var x -> maybe (Var x) id (Map.lookup x sigma)
+--   App f a -> App (applySub sigma gamma f) (applySub sigma gamma a)
+--   Let x alpha a b -> Let x (applySub sigma gamma alpha) (applySub sigma gamma a) (applySub sigma gamma b)
+--   Hole h alpha sigma' -> 
+--     if Map.null sigma'
+--       then Hole h alpha sigma'
+--       else Hole h (normalize  UniNrm (applySub (sigma `joinSub` sigma')  gamma (toSyn alpha))) (sigma `joinSub` sigma')
