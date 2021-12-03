@@ -7,6 +7,7 @@ ASSUMPTIONS
 -}
 
 import Control.Monad as Monad
+import Data.Maybe as Maybe 
 import Data.Map as Map
 
 -- |
@@ -41,7 +42,7 @@ instance Show Syn where
     Lam x alpha b fix -> "(λ " ++ show x ++ " : " ++ show alpha ++ " . " ++ show b ++ ")"
     App f a fix -> "(" ++ show f ++ " " ++ show a ++ ")"
     Var x fix -> show x
-    Hole h sigma fix -> "?" ++ show h ++ "[" ++ show sigma ++ "]"
+    Hole h sigma fix -> "?" ++ show h ++ if Map.null sigma then "" else "[" ++ show sigma ++ "]"
     Let x alpha a b fix -> "(let " ++ show x ++ " : " ++ show alpha ++ " = " ++ show a ++ " in " ++ show b ++ ")"
 
 instance Show VarId where
@@ -50,12 +51,21 @@ instance Show VarId where
 instance Show HoleId where
   show (HoleId h) = show h
 
+readSyn :: String -> Syn
+readSyn = evalParserUnsafe parseSyn
+
 -- |
 -- == Parsing
 
 -- type Parser a = String -> Maybe (String, a)
 
 newtype Parser a = Parser { runParser :: String -> Maybe (a, String) }
+
+evalParser :: Parser a -> String -> Maybe a
+evalParser p = fmap fst . runParser p
+
+evalParserUnsafe :: Parser a -> String -> a
+evalParserUnsafe p = fromJust . evalParser p
 
 instance Functor Parser where
   f `fmap` pa = Parser \str0 -> do
@@ -97,6 +107,11 @@ parseChar c = do
   c' <- parseNextChar
   unless (c == c') parseFail
 
+parsePredicatedChar :: (Char -> Bool) -> Parser Char
+parsePredicatedChar p = do
+  c <- parseNextChar
+  if p c then return c else parseFail
+
 parseString :: String -> Parser ()
 parseString = mapM_ parseChar
 
@@ -108,14 +123,16 @@ parseWhitespace = do
     Nothing -> put str0 >> return ()
 
 parseNextNonemptyWord :: Parser String
-parseNextNonemptyWord = (:) <$> parseNextChar <*> parseNextWord
+parseNextNonemptyWord = (:) <$> parsePredicatedChar (not . (`elem` separators)) <*> parseNextWord
+
+separators :: [Char]
+separators = " ().:="
 
 parseNextWord :: Parser String
 parseNextWord = do
-  parseTry parseNextChar >>= \case
-    Nothing -> return ""
-    Just ' ' -> return ""
+  parseTry (parsePredicatedChar (not . (`elem` separators))) >>= \case
     Just c -> (c :) <$> parseNextWord
+    Nothing -> return ""
 
 parseNextInt :: Parser Int
 parseNextInt = do
@@ -220,9 +237,6 @@ parseVarId = lexeme $ VarId <$> parseNextNonemptyWord
 parseHoleId :: Parser HoleId
 parseHoleId = lexeme $ HoleId <$> parseNextInt
 
-test :: Maybe (Syn, String)
-test = runParser parseSyn "(Π x : alpha . beta)"
-
 -- |
 -- == Normalization
 
@@ -256,18 +270,13 @@ norm = \case
   Hole h sigma fix -> Hole h sigma fix
   Let x alpha a b fix -> sub b x (norm a)
 
--- TODO: use parsing
+norm_test1 :: Syn
+norm_test1 = norm . readSyn $
+  "(let x : U = U in x)"
 
--- norm_test1 :: Syn
--- norm_test1 = norm $
---   Let (VarId "x") (Uni FixTerm) (Uni FixTerm) 
---     (Var (VarId "x") FixTerm)
---     FixTerm
-
--- norm_test2 :: Syn
--- norm_test2 = norm $
---   App (Lam "x" (Uni FixTerm) (Var "x" FixTerm) FixTerm)
---       (Var "y" FixTerm) FixTerm
+norm_test2 :: Syn
+norm_test2 = norm . readSyn $
+  "((λ x : U . x) y)"
 
 -- |
 -- == Renaming
