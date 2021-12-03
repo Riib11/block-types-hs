@@ -15,7 +15,7 @@ data Syn
   | Lam Var Syn Syn
   | App Syn Syn
   | Var Var
-  | Hole Hole Syn Sub
+  | Hole Hole Sub
   | Let Var Syn Syn Syn
   deriving (Eq)
 

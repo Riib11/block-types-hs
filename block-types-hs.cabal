@@ -25,11 +25,13 @@ source-repository head
 
 library
   exposed-modules:
-      Language.BlockTypes.Context
       Language.BlockTypes.Inference
       Language.BlockTypes.Normalization
+      Language.BlockTypes.Omega
       Language.BlockTypes.Rewriting
       Language.BlockTypes.Semantics
+      Language.BlockTypes.Shallow
+      Language.BlockTypes.Substitution
       Language.BlockTypes.Syntax
       Language.BlockTypes.Unification
   other-modules:
