@@ -321,7 +321,8 @@ applyHoleSubToHoleCtx sigma gamma =
   Prelude.foldl (flip Map.delete) gamma (Map.keys sigma)
 
 applyHoleSubToCtx :: HoleSub -> Ctx -> Ctx
-applyHoleSubToCtx sigma g = Map.map (\(alpha, mb_a) -> (applyHoleSub sigma alpha, applyHoleSub sigma <$> mb_a)) g
+applyHoleSubToCtx sigma = Map.map \(alpha, mb_a) ->
+  (applyHoleSub sigma alpha, applyHoleSub sigma <$> mb_a)
 
 -- None of the keys in sigma1 appear in the keys or values of sigma2
 joinHoleSub :: HoleSub -> HoleSub -> HoleSub
@@ -335,11 +336,21 @@ unify gamma g a a' = case (a, a') of
   (Uni fix, Uni fix') -> return mempty
   (Pi x alpha beta fix, Pi x' alpha' beta' fix') -> do
     sigma1 <- unify gamma g alpha alpha'
-    sigma2 <- unify gamma (Map.insert x (applyHoleSub sigma1 alpha, mzero) g) beta (rename x' x beta')
+    sigma2 <-
+      unify
+        gamma
+        (Map.insert x (applyHoleSub sigma1 alpha, mzero) g)
+        beta
+        (rename x' x beta')
     return $ sigma1 `joinHoleSub` sigma2
   (Lam x alpha b fix, Lam x' alpha' b' fix') -> do
     sigma1 <- unify gamma g alpha alpha'
-    sigma2 <- unify gamma (Map.insert x (applyHoleSub sigma1 alpha, mzero) g) b (rename x' x b')
+    sigma2 <-
+      unify
+        gamma
+        (Map.insert x (applyHoleSub sigma1 alpha, mzero) g)
+        b
+        (rename x' x b')
     return $ sigma1 `joinHoleSub` sigma2
   (App f a fix, App f' a' fix') -> do
     sigma1 <- unify gamma g f f'
@@ -349,8 +360,18 @@ unify gamma g a a' = case (a, a') of
     if x == x' then return mempty else mzero
   (Let x alpha a b fix, Let x' alpha' a' b' fix') -> do
     sigma1 <- unify gamma g alpha alpha'
-    sigma2 <- unify (applyHoleSubToHoleCtx sigma1 gamma) (applyHoleSubToCtx sigma1 g) (applyHoleSub sigma1 a) (applyHoleSub sigma1 a')
-    sigma3 <- unify (applyHoleSubToHoleCtx (sigma2 `joinHoleSub` sigma1) gamma) (applyHoleSubToCtx (sigma2 `joinHoleSub` sigma1) g)  (applyHoleSub (sigma2 `joinHoleSub` sigma1) b) (applyHoleSub (sigma2 `joinHoleSub` sigma1) (rename x' x b'))
+    sigma2 <-
+      unify
+        (applyHoleSubToHoleCtx sigma1 gamma)
+        (applyHoleSubToCtx sigma1 g)
+        (applyHoleSub sigma1 a)
+        (applyHoleSub sigma1 a')
+    sigma3 <-
+      unify
+        (applyHoleSubToHoleCtx (sigma2 `joinHoleSub` sigma1) gamma)
+        (applyHoleSubToCtx (sigma2 `joinHoleSub` sigma1) g)
+        (applyHoleSub (sigma2 `joinHoleSub` sigma1) b)
+        (applyHoleSub (sigma2 `joinHoleSub` sigma1) (rename x' x b'))
     return $ sigma1 `joinHoleSub` sigma2 `joinHoleSub` sigma3
   (Hole h sigma fix, a') | Map.null sigma -> return $ Map.singleton h a'
   (a, Hole h' sigma' fix') | Map.null sigma' -> return $ Map.singleton h' a
@@ -386,9 +407,52 @@ getFix = \case
   Hole h s fix -> fix
   Let x alpha a b fix -> fix
 
+getFixIn :: VarId -> Syn -> Fix
+getFixIn x = \case
+  Uni _ -> Free
+  Pi _ alpha beta _ -> getFixIn x alpha `max` getFixIn x beta
+  Lam _ alpha b _ -> getFixIn x alpha `max` getFixIn x b
+  App f a _ -> getFixIn x f `max` getFixIn x a
+  Var y fix -> if x == y then fix else Free
+  Hole _ _ _ -> Free
+  Let _ alpha a beta _ -> getFixIn x alpha `max` getFixIn x a `max` getFixIn x beta
+
 -- Updates the fixity of subterms.
-updateFix :: Syn -> Syn
-updateFix = id -- TODO
+updateFix :: Fix -> Syn -> Syn
+updateFix fix = \case
+  Uni _ -> Uni fix
+  Pi x alpha beta _ ->
+    let
+      fix_alpha = if fix == FixTerm || getFixIn x beta' >= FixType then FixTerm else FixType
+      fix_beta = if fix == FixTerm then FixTerm else FixType
+      beta' = updateFix fix_beta beta
+    in
+      Pi x (updateFix fix_alpha alpha) beta' fix
+  Lam x alpha b _ ->
+    let
+      fix_alpha = if fix >= FixType || getFixIn x b' >= FixType then FixTerm else FixType
+      fix_b = fix
+      b' = updateFix fix_b b
+    in
+      Lam x (updateFix fix_alpha alpha) b' fix
+  App f a _ -> App (updateFix fix f) (updateFix fix a) fix
+  Var x _ -> Var x fix -- TODO: depends if type is a hole
+  Hole h s _ -> Hole h s fix -- TODO: depends if substitution is empty or not
+  Let x alpha a b _ ->
+    let
+      fix_alpha = if getFixIn x b' >= FixType then FixTerm else FixType
+      fix_a = if getFixIn x b' == FixTerm then FixTerm else
+              if getFixIn x b' == FixType then FixType
+              else Free
+      fix_b = fix
+      b' = updateFix fix_b b
+    in
+      Let x (updateFix fix_alpha alpha) (updateFix fix_a a) b' fix
+
+isHole :: Syn -> Bool
+isHole = \case 
+  Hole _ _ _ -> True
+  _ -> False
 
 -- |
 -- == Rewriting
@@ -398,7 +462,9 @@ data Rewrite = Rewrite
   { gamma :: HoleCtx
   , maxFix :: Fix
   , input :: Syn
+  , inputType :: Syn
   , output :: Syn }
+  deriving (Show)
 
 -- Makes a rewrite rule in this form:
 -- `gamma |- input{fix <= maxFix} ~> output{fix <= maxFix}`
@@ -407,9 +473,10 @@ makeRewriteRule gamma input output = Rewrite
   { gamma
   , maxFix = inferMaxFix gamma input output
   , input
+  , inputType = infer gamma mempty input
   , output }
 
--- Infers the maximum fixity of for the input/output of a rewrite rule.
+-- Infers the maximumity of for the input/output of a rewrite rule.
 inferMaxFix :: HoleCtx -> Syn -> Syn -> Fix
 inferMaxFix gamma input output = FixTerm -- TODO
 
@@ -417,10 +484,18 @@ inferMaxFix gamma input output = FixTerm -- TODO
 -- the unifying hole substitution.
 tryRewrite :: Rewrite -> HoleCtx -> Ctx -> Syn -> Maybe HoleSub
 tryRewrite rew gamma g a = do
-  -- check maximum fix
+  -- check maximum
   guard $ getFix a <= rew.maxFix
+  -- unity rewrite input type with term's type
+  sigma1 <- unify (gamma <> rew.gamma) g rew.inputType (infer gamma g a)
   -- unify rewrite input with term
-  unify (gamma <> rew.gamma) g rew.input a
+  sigma2 <-
+    unify
+      (applyHoleSubToHoleCtx sigma1 $ gamma <> rew.gamma)
+      (applyHoleSubToCtx sigma1 g)
+      (applyHoleSub sigma1 rew.input)
+      (applyHoleSub sigma1 a)
+  return (sigma1 `joinHoleSub` sigma2)
 
 -- rewrites :: [Rewrite]
 -- rewrites =
