@@ -146,8 +146,8 @@ instance Ord k => Deletable (Sub k v) k where
 -- |
 -- == Normalization
 
--- inputs/output is normal
--- a [x |-> b]
+-- | inputs/output are normal
+-- `a [x |-> b]`
 sub :: Syn -> VarId -> Syn -> Syn 
 sub a x b = case a of 
   Uni fix -> Uni fix
@@ -157,7 +157,7 @@ sub a x b = case a of
   Var y fix -> if x == y then b else Var y fix
   Hole h s fix -> Hole h (insert x b s) fix
 
--- inputs/output is normal
+-- | inputs/output is normal
 app :: Syn -> Syn -> Syn
 app f a = case f of
   Lam x alpha b fix -> sub b x a
@@ -165,7 +165,7 @@ app f a = case f of
   Var x fix -> App (Var x fix) a fix
   Hole h s fix -> App (Hole h s fix) a fix
 
--- output is normal
+-- | output is normal
 norm :: Syn -> Syn
 norm = \case
   Uni fix -> Uni fix
@@ -214,7 +214,7 @@ class Substitutable k v a where
   substitute :: Sub k v -> a -> a
 
 instance Substitutable VarId Syn Syn where
-  -- Doesn't normalize things..
+  -- | Doesn't normalize things
   substitute s = \case
     Uni fix -> Uni fix
     Pi x alpha beta fix -> Pi x (substitute s alpha) (substitute s beta) fix
@@ -302,7 +302,7 @@ unify gamma g a a' = case (a, a') of
 -- |
 -- == Inference
 
--- Returns a type in normal form
+-- | Returns a type in normal form
 infer :: HoleCtx -> VarCtx -> Syn -> Syn
 infer gamma g = \case
   Uni fix -> Uni fix
@@ -316,7 +316,7 @@ infer gamma g = \case
 -- |
 -- == Fixity
 
--- free < type < term
+-- | free < type < term
 data Fix = Free | FixType | FixTerm deriving (Eq, Ord, Show)
 
 getFix :: Syn -> Fix
@@ -540,7 +540,7 @@ lexeme p = do
   parseWhitespace
   return a
 
--- Tries to do a given parser. If the attempts succeeds, then modifies state. Otherwise, resets to the state before attempt.
+-- | Tries to do a given parser. If the attempts succeeds, then modifies state. Otherwise, resets to the state before attempt.
 parseTry :: Parser a -> Parser (Maybe a)
 parseTry p = do
   str0 <- get
@@ -548,7 +548,7 @@ parseTry p = do
     Just (a, str1) -> put str1 >> return (Just a)
     Nothing -> return Nothing 
 
--- Tries each parser in list until one succeeds. If none succeed, then returns Nothing.
+-- | Tries each parser in list until one succeeds. If none succeed, then returns Nothing.
 parseFirstOf :: [Parser a] -> Parser (Maybe a)
 parseFirstOf [] = return Nothing
 parseFirstOf (p : ps) = do
