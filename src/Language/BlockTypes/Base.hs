@@ -2,8 +2,10 @@
 module Language.BlockTypes.Base where 
 
 {-
+
 ASSUMPTIONS
 - unique variable names
+
 -}
 
 import qualified System.IO.Unsafe as Unsafe
@@ -45,7 +47,8 @@ instance Show VarId where
 instance Show HoleId where
   show (HoleId h) = show h
 
--- Ctx
+-- |
+-- === Ctx
 
 type VarCtx = Ctx VarId VarCtxItem -- g :: var |-> type, value?
 type HoleCtx = Ctx HoleId Syn -- gamma :: hole => type
@@ -69,7 +72,8 @@ instance (Show k, Show v) => Show (Ctx k v) where
         $ ctx )
         ++ "}"
 
--- Sub
+-- |
+-- === Sub
 
 type VarSub = Sub VarId Syn
 type HoleSub = Sub HoleId Syn
@@ -295,8 +299,8 @@ unify gamma g a a' = case (a, a') of
     return $ Sub $ Map.singleton h' (substitute sigma' a)
   _ -> mzero
   
-  -- |
-  -- == Inference
+-- |
+-- == Inference
 
 -- Returns a type in normal form
 infer :: HoleCtx -> VarCtx -> Syn -> Syn
@@ -335,7 +339,7 @@ getFixIn x = \case
   Hole _ _ _ -> Free
   Let _ alpha a beta _ -> getFixIn x alpha `max` getFixIn x a `max` getFixIn x beta
 
--- Updates the fixity of subterms.
+-- | Updates the fixity of subterms.
 updateFix :: Fix -> Syn -> Syn
 updateFix fix = \case
   Uni _ -> Uni fix
@@ -375,7 +379,7 @@ isHole = \case
 -- |
 -- == Rewriting
 
--- `gamma |- input{maxFix} ~> output{maxFix}`
+-- | `gamma |- input{maxFix} ~> output{maxFix}`
 data Rewrite = Rewrite
   { gamma :: HoleCtx
   , maxFix :: Fix
@@ -384,7 +388,7 @@ data Rewrite = Rewrite
   , output :: Syn }
   deriving (Show)
 
--- Makes a rewrite rule in this form:
+-- | Makes a rewrite rule in this form:
 -- `gamma |- input{fix <= maxFix} ~> output{fix <= maxFix}`
 makeRewriteRule :: HoleCtx -> Syn -> Syn -> Rewrite
 makeRewriteRule gamma input output = Rewrite
@@ -394,11 +398,11 @@ makeRewriteRule gamma input output = Rewrite
   , inputType = infer gamma mempty input
   , output }
 
--- Infers the maximumity of for the input/output of a rewrite rule.
+-- | Infers the maximumity of for the input/output of a rewrite rule.
 inferMaxFix :: HoleCtx -> Syn -> Syn -> Fix
 inferMaxFix gamma input output = FixTerm -- TODO
 
--- Unifies a rewrite rule's input with the given term (if valid), then returns
+-- | Unifies a rewrite rule's input with the given term (if valid), then returns
 -- the unifying hole substitution.
 tryRewrite :: Rewrite -> HoleCtx -> VarCtx -> Syn -> Maybe HoleSub
 tryRewrite rew gamma g a = do
@@ -441,12 +445,6 @@ rewrites =
       (readSyn "(λ x : ?0 . (?2 ?3))")
       (readSyn "f")
   ]
-
--- |
--- == Debugging
-
-debug :: String -> ()
-debug = Unsafe.unsafePerformIO . putStrLn
 
 -- |
 -- == Parsing
@@ -631,3 +629,9 @@ parseVarId = lexeme $ VarId <$> parseNextNonemptyWord
 
 parseHoleId :: Parser HoleId
 parseHoleId = lexeme $ HoleId <$> parseNextInt
+
+-- |
+-- == Debugging
+
+debug :: String -> ()
+debug = Unsafe.unsafePerformIO . putStrLn
