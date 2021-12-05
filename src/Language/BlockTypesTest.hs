@@ -1,4 +1,4 @@
-module Language.BlockTypes.OmegaTest where
+module Language.BlockTypesTest where
 
 import qualified System.IO.Unsafe as Unsafe
 import Control.Monad as Monad
@@ -7,7 +7,7 @@ import qualified Data.Map as Map
 import qualified Data.List as List
 import Prelude hiding (lookup)
 
-import Language.BlockTypes.Omega
+import Language.BlockTypes
 
 
 test =

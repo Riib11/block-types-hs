@@ -25,15 +25,8 @@ source-repository head
 
 library
   exposed-modules:
-      Language.BlockTypes.Inference
-      Language.BlockTypes.Normalization
-      Language.BlockTypes.Omega
-      Language.BlockTypes.Rewriting
-      Language.BlockTypes.Semantics
-      Language.BlockTypes.Shallow
-      Language.BlockTypes.Substitution
-      Language.BlockTypes.Syntax
-      Language.BlockTypes.Unification
+      Language.BlockTypes
+      Language.BlockTypesTest
   other-modules:
       Paths_block_types_hs
   hs-source-dirs:

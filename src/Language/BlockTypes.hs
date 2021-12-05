@@ -1,5 +1,5 @@
-{-# LANGUAGE LambdaCase, BlockArguments, OverloadedRecordDot, UndecidableInstances #-}
-module Language.BlockTypes.Omega where 
+{-# LANGUAGE LambdaCase, BlockArguments, OverloadedRecordDot, UndecidableInstances, NamedFieldPuns, MultiParamTypeClasses, TypeSynonymInstances, FlexibleInstances, DeriveTraversable, GeneralizedNewtypeDeriving #-}
+module Language.BlockTypes where 
 
 {-
 ASSUMPTIONS
