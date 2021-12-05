@@ -25,8 +25,8 @@ source-repository head
 
 library
   exposed-modules:
-      Language.BlockTypes
-      Language.BlockTypesTest
+      Language.BlockTypes.Base
+      Language.BlockTypes.Test
   other-modules:
       Paths_block_types_hs
   hs-source-dirs:

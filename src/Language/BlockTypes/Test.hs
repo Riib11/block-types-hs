@@ -1,4 +1,4 @@
-module Language.BlockTypesTest where
+module Language.BlockTypes.Test where
 
 import qualified System.IO.Unsafe as Unsafe
 import Control.Monad as Monad
@@ -7,8 +7,7 @@ import qualified Data.Map as Map
 import qualified Data.List as List
 import Prelude hiding (lookup)
 
-import Language.BlockTypes
-
+import Language.BlockTypes.Base
 
 test =
   tryRewrite
