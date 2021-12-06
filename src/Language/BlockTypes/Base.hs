@@ -255,8 +255,8 @@ instance Substitutable HoleId Syn Syn where
     App f a -> App (substitute sigma f) (substitute sigma a)
     Var x -> Var x
     Hole h s -> case lookup h sigma of 
-      Just a -> substitute s a
-      Nothing -> Hole h s
+      Just a -> substitute (substitute sigma s) (substitute sigma a)
+      Nothing -> Hole h (substitute sigma s)
 
 instance Substitutable HoleId Syn HoleCtx where
   substitute (Sub sigma) =
@@ -267,6 +267,9 @@ instance Substitutable HoleId Syn VarCtx where
   substitute sigma = fmap (\item ->
     VarCtxItem{ typ  = substitute sigma item.typ
               , val = substitute sigma <$> item.val })
+
+instance Substitutable HoleId Syn VarSub where
+  substitute sigma s = fmap (substitute sigma) s
 
 -- |
 -- == Unification
@@ -344,15 +347,32 @@ infer gamma g = \case
 data Fix = Free | FixType | FixTerm deriving (Eq, Ord, Show)
 
 -- TODO: where do variables get term-fixed?
-getFixIn :: VarId -> Syn -> Fix
-getFixIn x = \case
+fixIn :: VarId -> Syn -> Fix -> Fix
+fixIn x a fix = case a of
   Uni -> Free
-  Pi _ alpha beta -> getFixIn x alpha `max` getFixIn x beta
-  Lam _ alpha b -> getFixIn x alpha `max` getFixIn x b
-  App f a -> getFixIn x f `max` getFixIn x a
-  Var y -> if x == y then FixType else Free
-  Hole _ _ -> Free
-  Let _ alpha a beta -> getFixIn x alpha `max` getFixIn x a `max` getFixIn x beta
+  Pi y alpha beta -> maximum [fixIn x alpha fixAlpha, fixIn x beta fixBeta] where
+    fixAlpha | fix >= FixType = FixTerm
+             | fixIn x beta fixBeta >= FixType = FixTerm
+             | otherwise = FixType
+    fixBeta | fix >= FixTerm = FixTerm
+            | otherwise = FixType
+  Lam y alpha b -> maximum [fixIn x alpha fixAlpha, fixIn x b fixB] where
+    fixAlpha | fix >= FixType = FixTerm
+             | fixIn x b fixB >= FixType = FixTerm
+             | otherwise = FixType
+    fixB = fix
+  App f a -> maximum [fixIn x f fix, fixIn x a fix]
+  Var y -> if x == y then fix else Free
+  Hole h s -> Free
+  Let y alpha a b -> maximum [fixIn x alpha fixAlpha, fixIn x a fixA, fixIn x b fixB] where
+    fixAlpha | fix >= FixTerm = FixTerm
+             | fixIn x b fixB >= FixType = FixTerm
+             | otherwise = FixType
+    fixA | fixIn x b fixB >= FixTerm = FixTerm 
+         | fixIn x b fixB >= FixType = FixType
+         | fixAlpha >= FixTerm = FixType
+         | otherwise = Free
+    fixB = fix
 
 isHole :: Syn -> Bool
 isHole = \case 
@@ -363,7 +383,7 @@ isHole = \case
 -- == Rewriting
 
 -- | `gamma |- input{maxFix} ~> output{maxFix}`
--- TODO: how to keep track of the additional things in contexts of certain entries of gamma?
+-- TODO: how to keep track of the local bindings in the contexts of some holes?
 data Rewrite = Rewrite
   { gamma :: HoleCtx
   , maxFix :: Fix
@@ -388,10 +408,9 @@ inferMaxFix gamma input output = FixTerm -- TODO
 tryRewrite :: HoleId -> Rewrite -> HoleCtx -> VarCtx -> Fix -> Syn -> Maybe HoleSub
 tryRewrite h rew gamma g fix a = do
   -- check maximum
-  -- guard $ getFix a <= rew.maxFix
   guard $ fix <= rew.maxFix
   -- unity rewrite input type with term's type
-  let inputType = infer gamma mempty (refreshHoles h rew.input)
+  let inputType = infer rew.gamma mempty (refreshHoles h rew.input)
   let alpha = infer gamma g a
   sigma1 <- unify (gamma <> refreshHoleCtx h rew.gamma) g (norm inputType) (norm $ alpha)
   -- unify rewrite input with term
@@ -423,8 +442,22 @@ rewrites =
         , (3, readSyn "?1") -- b
         ])
       (readSyn "((λ x : ?0 . ?2) ?3)")
-      (readSyn "?3[x -> ?2]")
+      (readSyn "?2[x = ?3]")
   ]
+
+rewrite_test1 :: (Syn, HoleSub, Syn)
+rewrite_test1 = 
+  let a = readSyn "((λ x : U . x) U)"
+      Just sigma = tryRewrite 0 (rewrites!!1) mempty mempty Free a
+      a' = substitute sigma (rewrites!!1).output
+  in (a, sigma, a')
+
+rewrite_test2 :: (Syn, HoleSub, Syn)
+rewrite_test2 = 
+  let a = readSyn "((λ x : U . x) (λ y : U . y))"
+      Just sigma = tryRewrite 0 (rewrites!!1) mempty mempty Free a
+      a' = substitute sigma (rewrites!!1).output
+  in (a, sigma, a')
 
 -- |
 -- == Parsing
@@ -499,7 +532,7 @@ parseNextNonemptyWord :: Parser String
 parseNextNonemptyWord = (:) <$> parsePredicatedChar (not . (`elem` separators)) <*> parseNextWord
 
 separators :: [Char]
-separators = " ().:=[]"
+separators = " (),.:=[]"
 
 parseNextWord :: Parser String
 parseNextWord = do
@@ -602,8 +635,9 @@ parseLet = do
 parseHole = do
   parseString "?"
   h <- parseHoleId
-  s <- parseVarSub
-  return $ Hole h s 
+  parseTry parseVarSub >>= \case
+    Just s -> return $ Hole h s 
+    Nothing -> return $ Hole h mempty
 
 parseVarId :: Parser VarId
 parseVarId = lexeme $ VarId <$> parseNextNonemptyWord
@@ -612,7 +646,33 @@ parseHoleId :: Parser HoleId
 parseHoleId = lexeme $ HoleId <$> parseNextInt
 
 parseVarSub :: Parser VarSub
-parseVarSub = lexeme $ undefined
+parseVarSub = do
+  lexeme $ parseString "["
+  subList <- lexeme $ parseManySeparated (lexeme $ parseString ",") parseVarSubItem
+  lexeme $ parseString "]"
+  return $ Sub $ Map.fromList subList
+  
+parseVarSubItem :: Parser (VarId, Syn)
+parseVarSubItem = do
+  x <- lexeme $ parseVarId
+  lexeme $ parseString "="
+  a <- lexeme $ parseSyn
+  return (x, a)
+
+parseMany :: Parser a -> Parser [a]
+parseMany p =
+  parseTry p >>= \case
+    Just a -> (a :) <$> parseMany p
+    Nothing -> return []
+
+parseManySeparated :: Parser () -> Parser a -> Parser [a]
+parseManySeparated pSep p =
+  parseTry p >>= \case
+    Just a -> parseTry pSep >>= \case
+      Just _ -> (a :) <$> parseManySeparated pSep p
+      Nothing -> return [a]
+    Nothing -> return []
+    
 
 -- |
 -- == Debugging
