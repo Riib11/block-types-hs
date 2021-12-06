@@ -344,6 +344,7 @@ infer gamma g = \case
 -- == Fixity
 
 -- | free < type < term
+-- `fix1 < fix2` implies that `fix1` is "less fixed" than `fix2`.
 data Fix = Free | FixType | FixTerm deriving (Eq, Ord, Show)
 
 -- TODO: where do variables get term-fixed?
