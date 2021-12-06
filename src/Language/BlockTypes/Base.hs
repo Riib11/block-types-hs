@@ -307,11 +307,14 @@ infer :: HoleCtx -> VarCtx -> Syn -> Syn
 infer gamma g = \case
   Uni fix -> Uni fix
   Pi x alpha beta fix -> Uni fix
-  Lam x alpha b fix -> Pi x alpha (infer gamma (insert x VarCtxItem{typ=alpha, val=Nothing} g) b) fix
-  App f a fix -> case infer gamma g f of Pi x alpha beta fix -> sub beta x (norm a)
+  Lam x alpha b fix -> Pi x alpha beta fix where
+    beta = infer gamma (insert x VarCtxItem{ typ = alpha , val = Nothing} g) b
+  App f a fix -> sub beta x (norm a) where
+    Pi x alpha beta fix = infer gamma g f
   Var x fix -> norm (typ $ index x g)
   Hole h s fix -> norm $ index h gamma
-  Let x alpha a b fix -> infer gamma (insert x VarCtxItem{typ=alpha, val=Just a} g) b
+  Let x alpha a b fix -> infer gamma beta b where
+    beta = insert x VarCtxItem{ typ = alpha, val = Just a } g
 
 -- |
 -- == Fixity
@@ -343,33 +346,30 @@ getFixIn x = \case
 updateFix :: Fix -> Syn -> Syn
 updateFix fix = \case
   Uni _ -> Uni fix
-  Pi x alpha beta _ ->
-    let
-      fix_alpha = if fix == FixTerm || getFixIn x beta' >= FixType then FixTerm else FixType
-      fix_beta = if fix == FixTerm then FixTerm else FixType
-      beta' = updateFix fix_beta beta
-    in
-      Pi x (updateFix fix_alpha alpha) beta' fix
-  Lam x alpha b _ ->
-    let
-      fix_alpha = if fix >= FixType || getFixIn x b' >= FixType then FixTerm else FixType
-      fix_b = fix
-      b' = updateFix fix_b b
-    in
-      Lam x (updateFix fix_alpha alpha) b' fix
+  Pi x alpha beta _ -> Pi x (updateFix fix_alpha alpha) beta' fix where
+    fix_alpha | fix == FixTerm = FixTerm
+              | getFixIn x beta' >= FixType = FixTerm
+              | otherwise = FixType
+    fix_beta | fix == FixTerm = FixTerm
+             | otherwise = FixType
+    beta' = updateFix fix_beta beta
+  Lam x alpha b _ -> Lam x (updateFix fix_alpha alpha) b' fix where
+    fix_alpha | fix >= FixType = FixTerm
+              | getFixIn x b' >= FixType = FixTerm
+              | otherwise = FixType
+    fix_b = fix
+    b' = updateFix fix_b b
   App f a _ -> App (updateFix fix f) (updateFix fix a) fix
-  Var x _ -> Var x fix -- TODO: depends if type is a hole
-  Hole h s _ -> Hole h s fix -- TODO: depends if substitution is empty or not
-  Let x alpha a b _ ->
-    let
-      fix_alpha = if getFixIn x b' >= FixType then FixTerm else FixType
-      fix_a = if getFixIn x b' == FixTerm then FixTerm else
-              if getFixIn x b' == FixType then FixType
-              else Free
-      fix_b = fix
-      b' = updateFix fix_b b
-    in
-      Let x (updateFix fix_alpha alpha) (updateFix fix_a a) b' fix
+  Var x _ -> Var x fix -- TODO: depends if type is a hole?
+  Hole h s _ -> Hole h s fix -- TODO: depends if substitution is empty or not?
+  Let x alpha a b _ -> Let x (updateFix fix_alpha alpha) (updateFix fix_a a) b' fix where
+    fix_alpha | getFixIn x b' >= FixType = FixTerm
+              | otherwise = FixType
+    fix_a | getFixIn x b' == FixTerm = FixTerm
+          | getFixIn x b' == FixType = FixType
+          | otherwise = Free
+    fix_b = fix
+    b' = updateFix fix_b b
 
 isHole :: Syn -> Bool
 isHole = \case 
@@ -408,28 +408,14 @@ tryRewrite :: Rewrite -> HoleCtx -> VarCtx -> Syn -> Maybe HoleSub
 tryRewrite rew gamma g a = do
   -- check maximum
   guard $ getFix a <= rew.maxFix
-  
-  -- return $! debug $ show $ gamma <> rew.gamma
-  -- return $! debug $ show $ g
-
-  -- return $! debug $ "rew.input = " ++ show rew.input
-
-  -- return $! debug $ "rew.inputType      = " ++ show rew.inputType
-  -- return $! debug $ "norm rew.inputType = " ++ show (norm rew.inputType)
-  
-  -- return $! debug $ "infer gamma g a        = " ++ show (infer gamma g a)
-  -- return $! debug $ "norm (infer gamma g a) = " ++ show (norm (infer gamma g a))
-  
   -- unity rewrite input type with term's type
   sigma1 <- unify (gamma <> rew.gamma) g (norm rew.inputType) (norm $ infer gamma g a)
-
   -- unify rewrite input with term
   sigma2 <- unify
               (substitute sigma1 $ gamma <> rew.gamma)
               (substitute sigma1 g)
               (substitute sigma1 rew.input)
               (substitute sigma1 a)
-
   return (sigma2 <> sigma1)
 
 rewrites :: [Rewrite]
