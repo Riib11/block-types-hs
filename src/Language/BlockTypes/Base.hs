@@ -19,13 +19,13 @@ import Prelude hiding (lookup)
 -- == Syntax
 
 data Syn
-  = Uni Fix
-  | Pi VarId Syn Syn Fix
-  | Lam VarId Syn Syn Fix
-  | App Syn Syn Fix
-  | Var VarId Fix
-  | Hole HoleId VarSub Fix
-  | Let VarId Syn Syn Syn Fix
+  = Uni
+  | Pi VarId Syn Syn
+  | Lam VarId Syn Syn
+  | App Syn Syn
+  | Var VarId
+  | Hole HoleId VarSub
+  | Let VarId Syn Syn Syn
   deriving (Eq)
 
 newtype VarId = VarId String deriving (Eq, Ord) -- x
@@ -33,13 +33,13 @@ newtype HoleId = HoleId Int deriving (Eq, Ord, Num) -- h
 
 instance Show Syn where
   show = \case
-    Uni fix -> "U"
-    Pi x alpha beta fix -> "(Π " ++ show x ++ " : " ++ show alpha ++ " . " ++ show beta ++ ")"
-    Lam x alpha b fix -> "(λ " ++ show x ++ " : " ++ show alpha ++ " . " ++ show b ++ ")"
-    App f a fix -> "(" ++ show f ++ " " ++ show a ++ ")"
-    Var x fix -> show x
-    Hole h s fix -> "?" ++ show h ++ if s == mempty then "" else show s
-    Let x alpha a b fix -> "(let " ++ show x ++ " : " ++ show alpha ++ " = " ++ show a ++ " in " ++ show b ++ ")"
+    Uni -> "U"
+    Pi x alpha beta -> "(Π " ++ show x ++ " : " ++ show alpha ++ " . " ++ show beta ++ ")"
+    Lam x alpha b -> "(λ " ++ show x ++ " : " ++ show alpha ++ " . " ++ show b ++ ")"
+    App f a -> "(" ++ show f ++ " " ++ show a ++ ")"
+    Var x -> show x
+    Hole h s -> "?" ++ show h ++ if s == mempty then "" else show s
+    Let x alpha a b -> "(let " ++ show x ++ " : " ++ show alpha ++ " = " ++ show a ++ " in " ++ show b ++ ")"
 
 instance Show VarId where
   show (VarId x) = x
@@ -52,13 +52,13 @@ instance Show HoleId where
 
 refreshHoles :: HoleId -> Syn -> Syn
 refreshHoles h = \case
-  Uni fix -> Uni fix
-  Pi x alpha beta fix -> Pi x (refreshHoles h alpha) (refreshHoles h beta) fix
-  Lam x alpha b fix -> Lam x (refreshHoles h alpha) (refreshHoles h b) fix
-  App f a fix -> App (refreshHoles h f) (refreshHoles h a) fix
-  Var x fix -> Var x fix
-  Hole h' s fix -> Hole (h + h') s fix
-  Let x alpha a b fix -> Let x (refreshHoles h alpha) (refreshHoles h a) (refreshHoles h b) fix
+  Uni -> Uni
+  Pi x alpha beta -> Pi x (refreshHoles h alpha) (refreshHoles h beta)
+  Lam x alpha b -> Lam x (refreshHoles h alpha) (refreshHoles h b)
+  App f a -> App (refreshHoles h f) (refreshHoles h a)
+  Var x -> Var x
+  Hole h' s -> Hole (h + h') s
+  Let x alpha a b -> Let x (refreshHoles h alpha) (refreshHoles h a) (refreshHoles h b)
 
 refreshHoleCtx :: HoleId -> HoleCtx -> HoleCtx
 refreshHoleCtx h (Ctx ctx) =
@@ -171,31 +171,31 @@ instance Ord k => Deletable (Sub k v) k where
 -- `a [x |-> b]`
 sub :: Syn -> VarId -> Syn -> Syn 
 sub a x b = case a of 
-  Uni fix -> Uni fix
-  Pi y alpha beta fix -> Pi x (sub alpha x b) (sub beta x b) fix
-  Lam y alpha c fix -> Lam x (sub alpha x b) (sub c x b) fix
-  App f a fix -> app (sub f x b) (sub a x b)
-  Var y fix -> if x == y then b else Var y fix
-  Hole h s fix -> Hole h (insert x b s) fix
+  Uni -> Uni
+  Pi y alpha beta -> Pi x (sub alpha x b) (sub beta x b)
+  Lam y alpha c -> Lam x (sub alpha x b) (sub c x b)
+  App f a -> app (sub f x b) (sub a x b)
+  Var y -> if x == y then b else Var y
+  Hole h s -> Hole h (insert x b s)
 
 -- | inputs/output is normal
 app :: Syn -> Syn -> Syn
 app f a = case f of
-  Lam x alpha b fix -> sub b x a
-  App f' a' fix -> App (App f' a' fix) a fix
-  Var x fix -> App (Var x fix) a fix
-  Hole h s fix -> App (Hole h s fix) a fix
+  Lam x alpha b -> sub b x a
+  App f' a' -> App (App f' a') a
+  Var x -> App (Var x) a
+  Hole h s -> App (Hole h s) a
 
 -- | output is normal
 norm :: Syn -> Syn
 norm = \case
-  Uni fix -> Uni fix
-  Pi x alpha beta fix -> Pi x (norm alpha) (norm beta) fix
-  Lam x alpha b fix -> Lam x (norm alpha) (norm b) fix
-  App f a fix -> app (norm f) (norm a)
-  Var x fix -> Var x fix
-  Hole h s fix -> Hole h s fix
-  Let x alpha a b fix -> sub b x (norm a)
+  Uni -> Uni
+  Pi x alpha beta -> Pi x (norm alpha) (norm beta)
+  Lam x alpha b -> Lam x (norm alpha) (norm b)
+  App f a -> app (norm f) (norm a)
+  Var x -> Var x
+  Hole h s -> Hole h s
+  Let x alpha a b -> sub b x (norm a)
 
 norm_test1 :: Syn
 norm_test1 = norm . readSyn $
@@ -213,13 +213,13 @@ class Renamable id a where
 
 instance Renamable VarId Syn where
   rename x y = \case
-    Uni fix -> Uni fix
-    Pi x alpha beta fix -> Pi x (rename x y alpha) (rename x y beta) fix
-    Lam x alpha b fix -> Lam x (rename x y alpha) (rename x y b) fix
-    App f a fix -> App (rename x y f) (rename x y a) fix
-    Var x' fix -> if x == x' then Var y fix else Var x' fix
-    Hole h s' fix -> Hole h (rename x y s') fix
-    Let x alpha a b fix -> Let x (rename x y alpha) (rename x y a) (rename x y b) fix
+    Uni -> Uni
+    Pi x alpha beta -> Pi x (rename x y alpha) (rename x y beta)
+    Lam x alpha b -> Lam x (rename x y alpha) (rename x y b)
+    App f a -> App (rename x y f) (rename x y a)
+    Var x' -> if x == x' then Var y else Var x'
+    Hole h s' -> Hole h (rename x y s')
+    Let x alpha a b -> Let x (rename x y alpha) (rename x y a) (rename x y b)
 
 instance Renamable VarId VarSub where
   rename x y (Sub s) =
@@ -237,26 +237,26 @@ class Substitutable k v a where
 instance Substitutable VarId Syn Syn where
   -- | Doesn't normalize things
   substitute s = \case
-    Uni fix -> Uni fix
-    Pi x alpha beta fix -> Pi x (substitute s alpha) (substitute s beta) fix
-    Lam x alpha b fix -> Lam x (substitute s alpha) (substitute s b) fix
-    App f a fix -> App (substitute s f) (substitute s a) fix
-    Var x fix -> case lookup x s of
+    Uni -> Uni
+    Pi x alpha beta -> Pi x (substitute s alpha) (substitute s beta)
+    Lam x alpha b -> Lam x (substitute s alpha) (substitute s b)
+    App f a -> App (substitute s f) (substitute s a)
+    Var x -> case lookup x s of
       Just a -> a
-      Nothing -> Var x fix
-    Hole h s' fix -> Hole h (s' <> s) fix
-    Let x alpha a b fix -> Let x (substitute s alpha) (substitute s a) (substitute s b) fix
+      Nothing -> Var x
+    Hole h s' -> Hole h (s' <> s)
+    Let x alpha a b -> Let x (substitute s alpha) (substitute s a) (substitute s b)
 
 instance Substitutable HoleId Syn Syn where
   substitute sigma = \case
-    Uni fix -> Uni fix
-    Pi x alpha beta fix -> Pi x (substitute sigma alpha) (substitute sigma beta) fix
-    Lam x alpha b fix -> Lam x (substitute sigma alpha) (substitute sigma b) fix
-    App f a fix -> App (substitute sigma f) (substitute sigma a) fix
-    Var x fix -> Var x fix
-    Hole h s fix -> case lookup h sigma of 
+    Uni -> Uni
+    Pi x alpha beta -> Pi x (substitute sigma alpha) (substitute sigma beta)
+    Lam x alpha b -> Lam x (substitute sigma alpha) (substitute sigma b)
+    App f a -> App (substitute sigma f) (substitute sigma a)
+    Var x -> Var x
+    Hole h s -> case lookup h sigma of 
       Just a -> substitute s a
-      Nothing -> Hole h s fix
+      Nothing -> Hole h s
 
 instance Substitutable HoleId Syn HoleCtx where
   substitute (Sub sigma) =
@@ -274,8 +274,8 @@ instance Substitutable HoleId Syn VarCtx where
 unify :: HoleCtx -> VarCtx -> Syn -> Syn -> Maybe HoleSub
 -- unify gamma g a a' = (return $! debug $ show a ++ " ~ " ++ show a') >> case (a, a') of 
 unify gamma g a a' = case (a, a') of 
-  (Uni fix, Uni fix') -> return mempty
-  (Pi x alpha beta fix, Pi x' alpha' beta' fix') -> do
+  (Uni, Uni) -> return mempty
+  (Pi x alpha beta, Pi x' alpha' beta') -> do
     sigma1 <- unify gamma g alpha alpha'
     sigma2 <- unify
                 (substitute sigma1 gamma)
@@ -285,7 +285,7 @@ unify gamma g a a' = case (a, a') of
                 (substitute sigma1 beta)
                 (rename x' x (substitute sigma1 beta'))
     return $ sigma2 <> sigma1
-  (Lam x alpha b fix, Lam x' alpha' b' fix') -> do
+  (Lam x alpha b, Lam x' alpha' b') -> do
     sigma1 <- unify gamma g alpha alpha'
     sigma2 <- unify
                 (substitute sigma1 gamma)
@@ -295,13 +295,13 @@ unify gamma g a a' = case (a, a') of
                 (substitute sigma1 b)
                 (rename x' x (substitute sigma1 b'))
     return $ sigma2 <> sigma1
-  (App f a fix, App f' a' fix') -> do
+  (App f a, App f' a') -> do
     sigma1 <- unify gamma g f f'
     sigma2 <- unify gamma g a a'
     return $ sigma1 <> sigma2
-  (Var x fix, Var x' fix') ->
+  (Var x, Var x') ->
     if x == x' then return mempty else mzero
-  (Let x alpha a b fix, Let x' alpha' a' b' fix') -> do
+  (Let x alpha a b, Let x' alpha' a' b') -> do
     sigma1 <- unify gamma g alpha alpha'
     sigma2 <- unify
                 (substitute sigma1 gamma)
@@ -314,9 +314,9 @@ unify gamma g a a' = case (a, a') of
                 (substitute (sigma2 <> sigma1) b)
                 (substitute (sigma2 <> sigma1) (rename x' x b'))
     return $ sigma3 <> sigma2 <> sigma1
-  (Hole h s fix, a') | not (isHole a') ->
+  (Hole h s, a') | not (isHole a') ->
     return $ Sub $ Map.singleton h (substitute s a')
-  (a, Hole h' sigma' fix') | not (isHole a) ->
+  (a, Hole h' sigma') | not (isHole a) ->
     return $ Sub $ Map.singleton h' (substitute sigma' a)
   _ -> mzero
   
@@ -326,15 +326,15 @@ unify gamma g a a' = case (a, a') of
 -- | Returns a type in normal form
 infer :: HoleCtx -> VarCtx -> Syn -> Syn
 infer gamma g = \case
-  Uni fix -> Uni fix
-  Pi x alpha beta fix -> Uni fix
-  Lam x alpha b fix -> Pi x alpha beta fix where
+  Uni -> Uni
+  Pi x alpha beta -> Uni
+  Lam x alpha b -> Pi x alpha beta where
     beta = infer gamma (insert x VarCtxItem{ typ = alpha , val = Nothing} g) b
-  App f a fix -> sub beta x (norm a) where
-    Pi x alpha beta fix = infer gamma g f
-  Var x fix -> norm (typ $ index x g)
-  Hole h s fix -> norm $ index h gamma
-  Let x alpha a b fix -> infer gamma beta b where
+  App f a -> sub beta x (norm a) where
+    Pi x alpha beta = infer gamma g f
+  Var x -> norm (typ $ index x g)
+  Hole h s -> norm $ index h gamma
+  Let x alpha a b -> infer gamma beta b where
     beta = insert x VarCtxItem{ typ = alpha, val = Just a } g
 
 -- |
@@ -343,64 +343,27 @@ infer gamma g = \case
 -- | free < type < term
 data Fix = Free | FixType | FixTerm deriving (Eq, Ord, Show)
 
-getFix :: Syn -> Fix
-getFix = \case
-  Uni fix -> fix
-  Pi x alpha beta fix -> fix
-  Lam x alpha b fix -> fix
-  App f a fix -> fix
-  Var x fix -> fix
-  Hole h s fix -> fix
-  Let x alpha a b fix -> fix
-
+-- TODO: where do variables get term-fixed?
 getFixIn :: VarId -> Syn -> Fix
 getFixIn x = \case
-  Uni _ -> Free
-  Pi _ alpha beta _ -> getFixIn x alpha `max` getFixIn x beta
-  Lam _ alpha b _ -> getFixIn x alpha `max` getFixIn x b
-  App f a _ -> getFixIn x f `max` getFixIn x a
-  Var y fix -> if x == y then fix else Free
-  Hole _ _ _ -> Free
-  Let _ alpha a beta _ -> getFixIn x alpha `max` getFixIn x a `max` getFixIn x beta
-
--- | Updates the fixity of subterms.
-updateFix :: Fix -> Syn -> Syn
-updateFix fix = \case
-  Uni _ -> Uni fix
-  Pi x alpha beta _ -> Pi x (updateFix fix_alpha alpha) beta' fix where
-    fix_alpha | fix == FixTerm = FixTerm
-              | getFixIn x beta' >= FixType = FixTerm
-              | otherwise = FixType
-    fix_beta | fix == FixTerm = FixTerm
-             | otherwise = FixType
-    beta' = updateFix fix_beta beta
-  Lam x alpha b _ -> Lam x (updateFix fix_alpha alpha) b' fix where
-    fix_alpha | fix >= FixType = FixTerm
-              | getFixIn x b' >= FixType = FixTerm
-              | otherwise = FixType
-    fix_b = fix
-    b' = updateFix fix_b b
-  App f a _ -> App (updateFix fix f) (updateFix fix a) fix
-  Var x _ -> Var x fix -- TODO: depends if type is a hole?
-  Hole h s _ -> Hole h s fix -- TODO: depends if substitution is empty or not?
-  Let x alpha a b _ -> Let x (updateFix fix_alpha alpha) (updateFix fix_a a) b' fix where
-    fix_alpha | getFixIn x b' >= FixType = FixTerm
-              | otherwise = FixType
-    fix_a | getFixIn x b' == FixTerm = FixTerm
-          | getFixIn x b' == FixType = FixType
-          | otherwise = Free
-    fix_b = fix
-    b' = updateFix fix_b b
+  Uni -> Free
+  Pi _ alpha beta -> getFixIn x alpha `max` getFixIn x beta
+  Lam _ alpha b -> getFixIn x alpha `max` getFixIn x b
+  App f a -> getFixIn x f `max` getFixIn x a
+  Var y -> if x == y then FixType else Free
+  Hole _ _ -> Free
+  Let _ alpha a beta -> getFixIn x alpha `max` getFixIn x a `max` getFixIn x beta
 
 isHole :: Syn -> Bool
 isHole = \case 
-  Hole _ _ _ -> True
+  Hole _ _ -> True
   _ -> False
 
 -- |
 -- == Rewriting
 
 -- | `gamma |- input{maxFix} ~> output{maxFix}`
+-- TODO: how to keep track of the additional things in contexts of certain entries of gamma?
 data Rewrite = Rewrite
   { gamma :: HoleCtx
   , maxFix :: Fix
@@ -422,10 +385,11 @@ inferMaxFix gamma input output = FixTerm -- TODO
 
 -- | Unifies a rewrite rule's input with the given term (if valid), then returns
 -- the unifying hole substitution.
-tryRewrite :: HoleId -> Rewrite -> HoleCtx -> VarCtx -> Syn -> Maybe HoleSub
-tryRewrite h rew gamma g a = do
+tryRewrite :: HoleId -> Rewrite -> HoleCtx -> VarCtx -> Fix -> Syn -> Maybe HoleSub
+tryRewrite h rew gamma g fix a = do
   -- check maximum
-  guard $ getFix a <= rew.maxFix
+  -- guard $ getFix a <= rew.maxFix
+  guard $ fix <= rew.maxFix
   -- unity rewrite input type with term's type
   let inputType = infer gamma mempty (refreshHoles h rew.input)
   let alpha = infer gamma g a
@@ -443,19 +407,23 @@ rewrites =
   [ -- η-conversion
     makeRewriteRule
       (Ctx $ Map.fromList
-        [ (HoleId 0, readSyn "U")
-        , (HoleId 1, readSyn "U")
-        , (HoleId 2, readSyn "(Π x : ?0 . ?1)")
-        , (HoleId 3, readSyn "?0")
+        [ (0, readSyn "U")
+        , (1, readSyn "U")
+        , (2, readSyn "(Π x : ?0 . ?1)")
+        , (3, readSyn "?0")
         ])
       (readSyn "(λ x : ?0 . (?2 ?3))")
       (readSyn "f")
-    -- -- β-conversion
-    -- makeRewriteRule
-    --   (Ctx $ Map.fromList
-    --     [ (HoleId 0, )
-
-    --     ])
+  , -- β-conversion
+    makeRewriteRule
+      (Ctx $ Map.fromList
+        [ (0, readSyn "U") -- A
+        , (1, readSyn "U") -- B
+        , (2, readSyn "?0") -- a
+        , (3, readSyn "?1") -- b
+        ])
+      (readSyn "((λ x : ?0 . ?2) ?3)")
+      (readSyn "?3[x -> ?2]")
   ]
 
 -- |
@@ -531,7 +499,7 @@ parseNextNonemptyWord :: Parser String
 parseNextNonemptyWord = (:) <$> parsePredicatedChar (not . (`elem` separators)) <*> parseNextWord
 
 separators :: [Char]
-separators = " ().:="
+separators = " ().:=[]"
 
 parseNextWord :: Parser String
 parseNextWord = do
@@ -589,7 +557,7 @@ parseSyn = do
 parseUni, parsePi, parseLam, parseApp, parseVar, parseHole, parseLet :: Parser Syn
 parseUni = lexeme do
   parseString "U"
-  return $ Uni FixTerm
+  return $ Uni 
 parsePi = lexeme do
   lexeme $ parseString "("
   lexeme $ parseString "Π"
@@ -599,7 +567,7 @@ parsePi = lexeme do
   lexeme $ parseString "."
   beta <- parseSyn
   lexeme $ parseString ")"
-  return $ Pi x alpha beta FixTerm
+  return $ Pi x alpha beta 
 parseLam = do
   lexeme $ parseString "("
   lexeme $ parseString "λ"
@@ -609,16 +577,16 @@ parseLam = do
   lexeme $ parseString "."
   b <- parseSyn
   lexeme $ parseString ")"
-  return $ Lam x alpha b FixTerm
+  return $ Lam x alpha b 
 parseApp = do
   lexeme $ parseString "("
   f <- parseSyn
   a <- parseSyn
   parseString ")"
-  return $ App f a FixTerm
+  return $ App f a 
 parseVar = do
   x <- parseVarId
-  return $ Var x FixTerm
+  return $ Var x 
 parseLet = do
   lexeme $ parseString "("
   lexeme $ parseString "let"
@@ -630,17 +598,21 @@ parseLet = do
   lexeme $ parseString "in"
   b <- parseSyn
   lexeme $ parseString ")"
-  return $ Let x alpha a b FixTerm
+  return $ Let x alpha a b 
 parseHole = do
   parseString "?"
   h <- parseHoleId
-  return $ Hole h mempty FixTerm
+  s <- parseVarSub
+  return $ Hole h s 
 
 parseVarId :: Parser VarId
 parseVarId = lexeme $ VarId <$> parseNextNonemptyWord
 
 parseHoleId :: Parser HoleId
 parseHoleId = lexeme $ HoleId <$> parseNextInt
+
+parseVarSub :: Parser VarSub
+parseVarSub = lexeme $ undefined
 
 -- |
 -- == Debugging
