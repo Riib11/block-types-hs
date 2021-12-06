@@ -29,7 +29,7 @@ data Syn
   deriving (Eq)
 
 newtype VarId = VarId String deriving (Eq, Ord) -- x
-newtype HoleId = HoleId Int deriving (Eq, Ord) -- h
+newtype HoleId = HoleId Int deriving (Eq, Ord, Num) -- h
 
 instance Show Syn where
   show = \case
@@ -46,6 +46,27 @@ instance Show VarId where
 
 instance Show HoleId where
   show (HoleId h) = show h
+
+-- |
+-- === Holes
+
+refreshHoles :: HoleId -> Syn -> Syn
+refreshHoles h = \case
+  Uni fix -> Uni fix
+  Pi x alpha beta fix -> Pi x (refreshHoles h alpha) (refreshHoles h beta) fix
+  Lam x alpha b fix -> Lam x (refreshHoles h alpha) (refreshHoles h b) fix
+  App f a fix -> App (refreshHoles h f) (refreshHoles h a) fix
+  Var x fix -> Var x fix
+  Hole h' s fix -> Hole (h + h') s fix
+  Let x alpha a b fix -> Let x (refreshHoles h alpha) (refreshHoles h a) (refreshHoles h b) fix
+
+refreshHoleCtx :: HoleId -> HoleCtx -> HoleCtx
+refreshHoleCtx h (Ctx ctx) =
+  Ctx .
+  Map.fromList .
+  List.map (\(h', a) -> (h + h', refreshHoles h a)) .
+  Map.toList 
+  $ ctx
 
 -- |
 -- === Ctx
@@ -384,9 +405,7 @@ data Rewrite = Rewrite
   { gamma :: HoleCtx
   , maxFix :: Fix
   , input :: Syn
-  , inputType :: Syn
   , output :: Syn }
-  deriving (Show)
 
 -- | Makes a rewrite rule in this form:
 -- `gamma |- input{fix <= maxFix} ~> output{fix <= maxFix}`
@@ -395,7 +414,6 @@ makeRewriteRule gamma input output = Rewrite
   { gamma
   , maxFix = inferMaxFix gamma input output
   , input
-  , inputType = infer gamma mempty input
   , output }
 
 -- | Infers the maximumity of for the input/output of a rewrite rule.
@@ -404,23 +422,25 @@ inferMaxFix gamma input output = FixTerm -- TODO
 
 -- | Unifies a rewrite rule's input with the given term (if valid), then returns
 -- the unifying hole substitution.
-tryRewrite :: Rewrite -> HoleCtx -> VarCtx -> Syn -> Maybe HoleSub
-tryRewrite rew gamma g a = do
+tryRewrite :: HoleId -> Rewrite -> HoleCtx -> VarCtx -> Syn -> Maybe HoleSub
+tryRewrite h rew gamma g a = do
   -- check maximum
   guard $ getFix a <= rew.maxFix
   -- unity rewrite input type with term's type
-  sigma1 <- unify (gamma <> rew.gamma) g (norm rew.inputType) (norm $ infer gamma g a)
+  let inputType = infer gamma mempty (refreshHoles h rew.input)
+  let alpha = infer gamma g a
+  sigma1 <- unify (gamma <> refreshHoleCtx h rew.gamma) g (norm inputType) (norm $ alpha)
   -- unify rewrite input with term
   sigma2 <- unify
-              (substitute sigma1 $ gamma <> rew.gamma)
+              (substitute sigma1 $ gamma <> refreshHoleCtx h rew.gamma)
               (substitute sigma1 g)
-              (substitute sigma1 rew.input)
+              (substitute sigma1 $ refreshHoles h rew.input)
               (substitute sigma1 a)
   return (sigma2 <> sigma1)
 
 rewrites :: [Rewrite]
 rewrites =
-  [ -- eta-conversion
+  [ -- η-conversion
     makeRewriteRule
       (Ctx $ Map.fromList
         [ (HoleId 0, readSyn "U")
@@ -430,6 +450,12 @@ rewrites =
         ])
       (readSyn "(λ x : ?0 . (?2 ?3))")
       (readSyn "f")
+    -- -- β-conversion
+    -- makeRewriteRule
+    --   (Ctx $ Map.fromList
+    --     [ (HoleId 0, )
+
+    --     ])
   ]
 
 -- |
