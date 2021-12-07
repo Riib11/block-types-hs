@@ -9,19 +9,19 @@ import Prelude hiding (lookup)
 
 import Language.BlockTypes.Base
 
-test =
-  tryRewrite
-    (rewrites!!0)
-    -- gamma
-    mempty 
-    -- g
-    (Ctx $ Map.fromList
-      [ (VarId "alpha", VarCtxItem (readSyn "U") Nothing)
-      , (VarId "beta" , VarCtxItem (readSyn "U") Nothing)
-      , (VarId "f"    , VarCtxItem (readSyn "(Π x : alpha . beta)") Nothing)
-      ])
-    -- a
-    (readSyn "(λ x : alpha . (f x))")
+-- test =
+--   tryRewrite
+--     (rewrites!!0)
+--     -- gamma
+--     mempty 
+--     -- g
+--     (Ctx $ Map.fromList
+--       [ (VarId "alpha", VarCtxItem (readSyn "U") Nothing)
+--       , (VarId "beta" , VarCtxItem (readSyn "U") Nothing)
+--       , (VarId "f"    , VarCtxItem (readSyn "(Π x : alpha . beta)") Nothing)
+--       ])
+--     -- a
+--     (readSyn "(λ x : alpha . (f x))")
 
 -- test =
 --   fmap showHoleSub $
