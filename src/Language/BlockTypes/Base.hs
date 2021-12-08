@@ -203,7 +203,7 @@ sub :: Trm -> VarId -> Trm -> Trm
 sub a x b = case a of 
   Uni -> Uni
   Pi y alpha beta -> Pi y (sub alpha x b) (sub beta x b)
-  Lam y alpha c -> Lam y (sub alpha x b) (sub c x (weak x b))
+  Lam y alpha c -> Lam y (sub alpha x b) (sub c x (weak y b))
   App f a -> app (sub f x b) (sub a x b)
   Var y -> if x == y then b else Var y
   Hole h s w ->
