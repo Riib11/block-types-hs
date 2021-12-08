@@ -33,6 +33,13 @@ data Trm
   | Let VarId Trm Trm Trm
   deriving (Eq)
 
+data TrmIx
+  = Here
+  | Pi_alpha TrmIx | Pi_beta TrmIx
+  | Lam_alpha TrmIx | Lam_b TrmIx
+  | App_f TrmIx | App_a TrmIx
+  | Let_alpha TrmIx | Let_a TrmIx | Let_b TrmIx
+
 type VarWkn = [VarId]
 
 newtype VarId = VarId Int deriving (Eq, Ord, Num) -- x
@@ -58,6 +65,32 @@ instance Show VarId where
 
 instance Show HoleId where
   show (HoleId i) = "?" ++ show i
+
+getSubterm :: Trm -> TrmIx -> Trm
+getSubterm a ix = case (a, ix) of
+  (Pi x alpha beta, Pi_alpha ix) -> getSubterm alpha ix
+  (Pi x alpha beta, Pi_beta ix) -> getSubterm beta ix
+  (Lam x alpha b, Lam_alpha ix) -> getSubterm alpha ix
+  (Lam x alpha b, Lam_b ix) -> getSubterm b ix
+  (App f a, App_f ix) -> getSubterm f ix
+  (App f a, App_a ix) -> getSubterm a ix
+  (Let x alpha a b, Let_alpha ix) -> getSubterm alpha ix
+  (Let x alpha a b, Let_a ix) -> getSubterm a ix 
+  (Let x alpha a b, Let_b ix) -> getSubterm b ix 
+  (a, Here) -> a
+
+replaceSubterm :: Trm -> TrmIx -> Trm -> Trm
+replaceSubterm a ix a' = case (a, ix) of
+  (Pi x alpha beta, Pi_alpha ix) -> Pi x (replaceSubterm alpha ix a') beta
+  (Pi x alpha beta, Pi_beta ix) -> Pi x alpha (replaceSubterm beta ix a')
+  (Lam x alpha b, Lam_alpha ix) -> Lam x (replaceSubterm alpha ix a') b
+  (Lam x alpha b, Lam_b ix) -> Lam x alpha (replaceSubterm b ix a')
+  (App f a, App_f ix) -> App (replaceSubterm f ix a') a
+  (App f a, App_a ix) -> App f (replaceSubterm a ix a')
+  (Let x alpha a b, Let_alpha ix) -> Let x (replaceSubterm alpha ix a') a b
+  (Let x alpha a b, Let_a ix) -> Let x alpha (replaceSubterm a ix a') b
+  (Let x alpha a b, Let_b ix) -> Let x alpha a (replaceSubterm b ix a')
+  (a, Here) -> a'
 
 -- |
 -- === Ctx
@@ -175,8 +208,8 @@ sub a x b = case a of
   Var y -> if x == y then b else Var y
   Hole h s w ->
     if x `elem` w
-      then Hole h s (x `List.delete` w)
-      else Hole h s w
+      then Hole h (insert x a s) (x `List.delete` w)
+      else Hole h (insert x a s) w
 
 -- | inputs/output is normal
 app :: Trm -> Trm -> Trm
