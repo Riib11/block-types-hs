@@ -202,8 +202,8 @@ weak y = \case
 sub :: Trm -> VarId -> Trm -> Trm 
 sub a x b = case a of 
   Uni -> Uni
-  Pi y alpha beta -> Pi x (sub alpha x b) (sub beta x b)
-  Lam y alpha c -> Lam x (sub alpha x b) (sub c x (weak x b))
+  Pi y alpha beta -> Pi y (sub alpha x b) (sub beta x b)
+  Lam y alpha c -> Lam y (sub alpha x b) (sub c x (weak x b))
   App f a -> app (sub f x b) (sub a x b)
   Var y -> if x == y then b else Var y
   Hole h s w ->
@@ -500,14 +500,14 @@ inferMaxFix gamma patternIn patternOut = FixTerm -- TODO
 -- In the result `Just (a, a', r, rho, sigma)`, `a` and `a'` have had `r` and `rho` applied, but not `sigma`.
 tryRewrite :: Rewrite -> HoleCtx -> VarCtx -> Fix -> Trm -> Gen (Maybe (Trm, Trm, RenVar, RenHole, HoleSub))
 tryRewrite rew gamma g fix a = do
-  lift $ putStrLn $ "rewrite:\n  " ++ show rew.patternIn ++ "~~>\n  " ++ show rew.patternOut
+  -- lift $ putStrLn $ "rewrite:\n  " ++ show rew.patternIn ++ "~~>\n  " ++ show rew.patternOut
   
   -- renew holes in rewrite patterns
   rho   <- renewHoles rew.gamma
   gammaRew   <- return $ rename rho rew.gamma
   patternIn  <- return $ rename rho rew.patternIn
   patternOut <- return $ rename rho rew.patternOut
-  lift $ putStrLn $ "rho:\n  " ++ show rho
+  -- lift $ putStrLn $ "rho:\n  " ++ show rho
   
   -- renew variables
   r <- renewVars [patternIn, patternOut, a]
@@ -520,13 +520,13 @@ tryRewrite rew gamma g fix a = do
   g          <- return $ rename r g
   a          <- return $ rename r a
   
-  lift $ putStrLn $ "r:\n  " ++ show r
-  lift $ putStrLn $ "gammaRew   = " ++ show gammaRew
-  lift $ putStrLn $ "patternIn  = " ++ show patternIn
-  lift $ putStrLn $ "patternOut = " ++ show patternOut
-  lift $ putStrLn $ "gamma      = " ++ show gamma
-  lift $ putStrLn $ "g          = " ++ show g
-  lift $ putStrLn $ "a          = " ++ show a
+  -- lift $ putStrLn $ "r:\n  " ++ show r
+  -- lift $ putStrLn $ "gammaRew   = " ++ show gammaRew
+  -- lift $ putStrLn $ "patternIn  = " ++ show patternIn
+  -- lift $ putStrLn $ "patternOut = " ++ show patternOut
+  -- lift $ putStrLn $ "gamma      = " ++ show gamma
+  -- lift $ putStrLn $ "g          = " ++ show g
+  -- lift $ putStrLn $ "a          = " ++ show a
 
   --
   return do
@@ -543,7 +543,38 @@ tryRewrite rew gamma g fix a = do
                     (substitute sigma1 a)
     return (patternIn, patternOut, r, rho, sigma2 <> sigma1)
 
--- TODO: algorithm for picking a random subterm to try applying a rewrite to
+-- tryRewriteAt :: Rewrite -> HoleCtx -> VarCtx -> Fix -> Trm -> Ix -> Gen (Maybe Trm)
+-- tryRewriteAt rew gamma g fix a Here = do
+--   -- renew holes in rewrite patterns
+--   rho   <- renewHoles rew.gamma
+--   gammaRew   <- return $ rename rho rew.gamma
+--   patternIn  <- return $ rename rho rew.patternIn
+--   patternOut <- return $ rename rho rew.patternOut
+--   -- renew variables
+--   r <- renewVars [patternIn, patternOut, a]
+--   -- rename variables in rewrite pattern
+--   gammaRew   <- return $ rename r gammaRew
+--   patternIn  <- return $ rename r patternIn
+--   patternOut <- return $ rename r patternOut
+--   -- rename variables in target
+--   gamma      <- return $ rename r gamma
+--   g          <- return $ rename r g
+--   a          <- return $ rename r a
+--   --
+--   return do
+--     -- check maximum fix
+--     guard $ fix <= rew.maxFix
+--     -- unify patternIn's type with target's type
+--     let patternInType = infer gammaRew mempty patternIn
+--     let alpha = infer gamma g a
+--     sigma1 <- unify gammaRew g (norm patternInType) (norm alpha)
+--     -- unify patternIn with target
+--     sigma2 <- unify (substitute sigma1 gammaRew)
+--                     (substitute sigma1 g)
+--                     (substitute sigma1 patternIn)
+--                     (substitute sigma1 a)
+--     return (patternIn, patternOut, r, rho, sigma2 <> sigma1)
+
 
 rewrites :: Map.Map String Rewrite
 rewrites = Map.fromList
@@ -658,27 +689,6 @@ run_rewrite_test rewName gamma g fix a = do
     Nothing ->
       putStrLn $ "\nfailed test for rewrite rule '" ++ rewName ++ "'"
 
-  -- case runState (tryRewrite rew gamma g fix a) (makeGenState a) of
-  --   (Just (patternIn, patternOut, sigma), _) -> do
-  --     let a' = substitute sigma patternOut
-  --     putStrLn $ unlines
-  --       [ "[SUCCEEDED]"
-  --       , "rewrite rule: " ++ rewName
-  --       , "  " ++ show patternIn ++ " ~~>"
-  --       , "  " ++ show patternOut
-  --       , "rewrite:"
-  --       , "  " ++ show a ++ " ~~>"
-  --       , "  " ++ show a'
-  --       , "  " ++ "via " ++ show sigma ]
-  --   (Nothing, _) ->
-  --     putStrLn $ "\nfailed test for rewrite rule '" ++ rewName ++ "'"
-
-{-
-TODO: should be U
-passed test for rewrite rule 'β-reduce':
-  ((λ #0 : U . #0) U) ~~> #0
-  via [?0 = U, ?2 = #0, ?3 = U]
--}
 rewrite_test1 :: IO ()
 rewrite_test1 = run_rewrite_test
   "β-reduce"
@@ -687,14 +697,6 @@ rewrite_test1 = run_rewrite_test
   Free
   (readTrm "((λ #0 : U . #0) U)")
 
-{-
-TODO: shpuld be (λ #1 : U . #1)
-TODO: looks like the output should have been renewed to ?3, so it could be subst'ed for correct thing
-
-passed test for rewrite rule 'β-reduce':
-  ((λ #0 : U . #0) (λ #1 : U . #1)) ~~> #1
-  via [?0 = U, ?2 = #1, ?3 = (λ #1 : U . #1)]
--}
 rewrite_test2 :: IO ()
 rewrite_test2 = run_rewrite_test
   "β-reduce"
@@ -703,14 +705,6 @@ rewrite_test2 = run_rewrite_test
   Free
   (readTrm "((λ #0 : U . #0) (λ #1 : U . #1))")
 
-{-
-TODO: sub doesn't make sense
-TODO: output looks right though..
-
-passed test for rewrite rule 'η-reduce':
-  (λ #1 : U . (#0 #1)) ~~> #0
-  via [?0 = U, ?1 = U, ?2 = #0]
--}
 rewrite_test3 :: IO ()
 rewrite_test3 = run_rewrite_test
   "η-reduce"
@@ -720,14 +714,6 @@ rewrite_test3 = run_rewrite_test
   Free
   (readTrm "(λ #1 : U . (#0 #1))")
 
-{-
-TODO: output is correct, but didnt do renewal
-TODO: hole sub doesnt make sense
-
-passed test for rewrite rule 'fill Π':
-  ?0 ~~> (Π #0 : ?2 . ?4)
-  via [?0 = U, ?1 = U]
--}
 rewrite_test4 :: IO ()
 rewrite_test4 = run_rewrite_test -- TODO
   "fill Π"
@@ -752,13 +738,13 @@ nextHoleId :: Gen HoleId
 nextHoleId = do
   h <- gets holeId
   modify $ \st -> st { holeId = h + 1 }
-  return h
+  return (h + 1)
 
 nextVarId :: Gen VarId
 nextVarId = do
   x <- gets varId
   modify $ \st -> st { varId = x + 1 }
-  return x
+  return (x + 1)
 
 nextRandR :: Int -> Int -> Gen Int
 nextRandR iMin iMax = do
