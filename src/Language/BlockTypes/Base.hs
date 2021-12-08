@@ -208,8 +208,8 @@ sub a x b = case a of
   Var y -> if x == y then b else Var y
   Hole h s w ->
     if x `elem` w
-      then Hole h (insert x a s) (x `List.delete` w)
-      else Hole h (insert x a s) w
+      then Hole h (insert x b s) (x `List.delete` w)
+      else Hole h (insert x b s) w
 
 -- | inputs/output is normal
 app :: Trm -> Trm -> Trm
