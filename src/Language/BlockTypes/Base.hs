@@ -21,33 +21,34 @@ import qualified Data.List as List
 import Prelude hiding (lookup)
 
 -- |
--- == Trm
+-- == Term
 
-data Prgm = Prgm { aTop :: Trm, gammaTop :: HoleCtx } deriving (Show)
+data Prgm = Prgm { aTop :: Term, gammaTop :: HoleCtx } deriving (Show)
 
-data Trm
+data Term
   = Uni
-  | Pi VarId Trm Trm
-  | Lam VarId Trm Trm
-  | App Trm Trm
+  | Pi VarId Term Term
+  | Lam VarId Term Term
+  | App Term Term
   | Var VarId
   | Hole HoleId VarSub VarWkn
-  | Let VarId Trm Trm Trm
+  | Let VarId Term Term Term
   deriving (Eq)
 
-data TrmIx
+data TermIx
   = Here
-  | Pi_alpha TrmIx | Pi_beta TrmIx
-  | Lam_alpha TrmIx | Lam_b TrmIx
-  | App_f TrmIx | App_a TrmIx
-  | Let_alpha TrmIx | Let_a TrmIx | Let_b TrmIx
+  | Pi_alpha TermIx | Pi_beta TermIx
+  | Lam_alpha TermIx | Lam_b TermIx
+  | App_f TermIx | App_a TermIx
+  | Let_alpha TermIx | Let_a TermIx | Let_b TermIx
+  deriving (Show)
 
 type VarWkn = [VarId]
 
 newtype VarId = VarId Int deriving (Eq, Ord, Num) -- x
 newtype HoleId = HoleId Int deriving (Eq, Ord, Num) -- h
 
-instance Show Trm where
+instance Show Term where
   show = \case
     Uni -> "U"
     Pi x alpha beta -> "(Π " ++ show x ++ " : " ++ show alpha ++ " . " ++ show beta ++ ")"
@@ -68,7 +69,7 @@ instance Show VarId where
 instance Show HoleId where
   show (HoleId i) = "?" ++ show i
 
-getSubterm :: Trm -> TrmIx -> Trm
+getSubterm :: Term -> TermIx -> Term
 getSubterm a ix = case (a, ix) of
   (Pi x alpha beta, Pi_alpha ix) -> getSubterm alpha ix
   (Pi x alpha beta, Pi_beta ix) -> getSubterm beta ix
@@ -81,7 +82,7 @@ getSubterm a ix = case (a, ix) of
   (Let x alpha a b, Let_b ix) -> getSubterm b ix 
   (a, Here) -> a
 
-replaceSubterm :: Trm -> TrmIx -> Trm -> Trm
+replaceSubterm :: Term -> TermIx -> Term -> Term
 replaceSubterm a ix a' = case (a, ix) of
   (Pi x alpha beta, Pi_alpha ix) -> Pi x (replaceSubterm alpha ix a') beta
   (Pi x alpha beta, Pi_beta ix) -> Pi x alpha (replaceSubterm beta ix a')
@@ -98,9 +99,9 @@ replaceSubterm a ix a' = case (a, ix) of
 -- === Ctx
 
 type VarCtx = Ctx VarId VarCtxItem -- g :: var |-> type, value?
-data VarCtxItem = VarCtxItem { typ :: Trm, val :: Maybe Trm }
+data VarCtxItem = VarCtxItem { typ :: Term, val :: Maybe Term }
 
-type HoleCtx = Ctx HoleId Trm -- gamma :: hole => type
+type HoleCtx = Ctx HoleId Term -- gamma :: hole => type
 
 newtype Ctx k v = Ctx [(k, v)]
   deriving (Eq, Semigroup, Monoid, Functor, Foldable, Traversable)
@@ -134,8 +135,8 @@ instance (Show k, Show v) => Show (Ctx k v) where
 -- |
 -- === Sub
 
-type VarSub = Sub VarId Trm
-type HoleSub = Sub HoleId Trm
+type VarSub = Sub VarId Term
+type HoleSub = Sub HoleId Term
 
 newtype Sub k v = Sub (Map.Map k v)
   deriving (Eq, Functor, Foldable, Traversable)
@@ -194,7 +195,7 @@ class Deletable c k where
 -- |
 -- == Normalization
 
-weak :: VarId -> Trm -> Trm
+weak :: VarId -> Term -> Term
 weak y = \case
   Uni -> Uni
   Pi x alpha beta -> Pi x (weak y alpha) (weak y beta)
@@ -206,7 +207,7 @@ weak y = \case
 
 -- | inputs/output are normal
 -- `a [x |-> b]`
-sub :: Trm -> VarId -> Trm -> Trm 
+sub :: Term -> VarId -> Term -> Term 
 sub a x b = case a of 
   Uni -> Uni
   Pi y alpha beta -> Pi y (sub alpha x b) (sub beta x b)
@@ -219,35 +220,38 @@ sub a x b = case a of
       else Hole h (insert x b s) w
 
 -- | inputs/output is normal
-app :: Trm -> Trm -> Trm
+app :: Term -> Term -> Term
 app f a = case f of
   Lam x alpha b -> sub b x a
   App f' a' -> App (App f' a') a
   Var x -> App (Var x) a
   Hole h s w -> App (Hole h s w) a
+  _ -> error (show f)
 
 -- | output is normal
-norm :: VarCtx -> Trm -> Trm
+norm :: VarCtx -> Term -> Term
 norm g = \case
   Uni -> Uni
   Pi x alpha beta -> Pi x (norm g alpha) (norm (insert x VarCtxItem{ typ = alpha, val = Nothing } g) beta)
   Lam x alpha b -> Lam x (norm g alpha) (norm (insert x VarCtxItem{ typ = alpha, val = Nothing } g) b)
   App f a -> app (norm g f) (norm g a)
-  Var x -> 
-    case val (index x g) of
-      Just a -> undefined
-      Nothing -> Var x
+  Var x -> Var x 
+    -- -- let (Ctx ctx) = g in
+    -- case val (index x g) of
+    --   Just a -> Var x -- TODO: need to weaken val by rest of context after x
+    --   Nothing -> Var x
   Hole h s w -> Hole h s w
-  Let x alpha a b -> sub b x (norm (insert x VarCtxItem{ typ = alpha, val = Just (norm g a) } g) a)
+  Let x alpha a b -> sub (norm g' b) x (norm g a)
+    where g' = (insert x VarCtxItem{ typ = alpha, val = Just (norm g a) } g)
 
-norm_test1 :: Trm
-norm_test1 = norm mempty . readTrm $
+norm_test1 :: Term
+norm_test1 = norm mempty . readTerm $
   "(let #0 : U = U in #0)"
 
-norm_test2 :: Trm
+norm_test2 :: Term
 norm_test2 = norm
-  (Ctx [(1, VarCtxItem{ typ = readTrm "U", val = Nothing })]) . 
-  readTrm $
+  (Ctx [(1, VarCtxItem{ typ = readTerm "U", val = Nothing })]) . 
+  readTerm $
   "((λ #0 : U . #0) #1)"
 
 -- |
@@ -271,15 +275,15 @@ class Renamable id a where
 renameSingle :: Renamable id a => id -> id -> a -> a
 renameSingle id1 id2 = rename (Ren $ Map.singleton id1 id2)
 
-instance Renamable VarId Trm where
+instance Renamable VarId Term where
   rename ren = \case
     Uni -> Uni
-    Pi x alpha beta -> Pi x (rename ren alpha) (rename ren beta)
+    Pi x alpha beta -> Pi (maybe x id (lookup x ren)) (rename ren alpha) (rename ren beta)
     Lam x alpha b -> Lam (maybe x id (lookup x ren)) (rename ren alpha) (rename ren b)
     App f a -> App (rename ren f) (rename ren a)
     Var x -> Var $ maybe x id (lookup x ren)
-    Hole h s' w -> Hole h (rename ren s') (rename ren w)
-    Let x alpha a b -> Let x (rename ren alpha) (rename ren a) (rename ren b)
+    Hole h s w -> Hole h (rename ren s) (rename ren w)
+    Let x alpha a b -> Let (maybe x id (lookup x ren)) (rename ren alpha) (rename ren a) (rename ren b)
 
 instance Renamable VarId VarWkn where
   rename (Ren ren) = fmap (\x -> maybe x id (Map.lookup x ren))
@@ -303,7 +307,7 @@ instance Renamable VarId VarCtxItem where
   rename ren item = item{ typ = rename ren item.typ
                         , val = rename ren <$> item.val }
 
-instance Renamable HoleId Trm where
+instance Renamable HoleId Term where
   rename ren = \case
     Uni -> Uni
     Pi x alpha beta -> Pi x (rename ren alpha) (rename ren beta)
@@ -311,6 +315,7 @@ instance Renamable HoleId Trm where
     App f a -> App (rename ren f) (rename ren a)
     Var x -> Var x
     Hole h s w -> Hole (maybe h id (lookup h ren)) (rename ren s) w
+    Let x alpha a b -> Let x (rename ren alpha) (rename ren a) (rename ren b)
 
 instance Renamable HoleId HoleCtx where
   rename ren (Ctx ctx) = Ctx $ fmap
@@ -333,7 +338,7 @@ instance Renamable HoleId VarSub where
 class Substitutable k v a where
   substitute :: Sub k v -> a -> a
 
-instance Substitutable VarId Trm Trm where
+instance Substitutable VarId Term Term where
   -- | Doesn't normalize things
   substitute s@(Sub sub) = \case
     Uni -> Uni
@@ -346,7 +351,7 @@ instance Substitutable VarId Trm Trm where
     Hole h s' w -> Hole h (s' <> s) (foldl (flip List.delete) w (Map.keys sub))
     Let x alpha a b -> Let x (substitute s alpha) (substitute s a) (substitute s b)
 
-instance Substitutable HoleId Trm Trm where
+instance Substitutable HoleId Term Term where
   substitute sigma = \case
     Uni -> Uni
     Pi x alpha beta -> Pi x (substitute sigma alpha) (substitute sigma beta)
@@ -356,26 +361,27 @@ instance Substitutable HoleId Trm Trm where
     Hole h s w -> case lookup h sigma of 
       Just a -> substitute (substitute sigma s) (substitute sigma a)
       Nothing -> Hole h (substitute sigma s) w
+    Let x alpha a b -> Let x (substitute sigma alpha) (substitute sigma a) (substitute sigma b)
 
-instance Substitutable HoleId Trm HoleCtx where
+instance Substitutable HoleId Term HoleCtx where
   substitute (Sub sub) (Ctx ctx) = Ctx $
     foldl
       (flip deleteAssoc)
       (fmap (fmap (substitute (Sub sub))) ctx)
       (Map.keys sub)
 
-instance Substitutable HoleId Trm VarCtx where
+instance Substitutable HoleId Term VarCtx where
   substitute sigma = fmap (\item ->
     VarCtxItem{ typ  = substitute sigma item.typ
               , val = substitute sigma <$> item.val })
 
-instance Substitutable HoleId Trm VarSub where
+instance Substitutable HoleId Term VarSub where
   substitute sigma = fmap (substitute sigma)
 
 -- |
 -- == Unification
 
-unify :: HoleCtx -> VarCtx -> Trm -> Trm -> Maybe HoleSub
+unify :: HoleCtx -> VarCtx -> Term -> Term -> Maybe HoleSub
 -- unify gamma g a a' = (return $! debug $ show a ++ " ~ " ++ show a') >> case (a, a') of 
 unify gamma g a a' = case (a, a') of 
   (Uni, Uni) -> return mempty
@@ -425,7 +431,7 @@ unify gamma g a a' = case (a, a') of
   (Hole h s w, Hole h' s' w') | s' == mempty -> return $ Sub $ Map.singleton h' (Hole h s w')
   _ -> mzero
 
-validHoleFill :: HoleId -> VarSub -> VarWkn -> Trm -> Bool
+validHoleFill :: HoleId -> VarSub -> VarWkn -> Term -> Bool
 validHoleFill h s w = \case
   Uni -> True
   Pi x alpha beta -> validHoleFill h s w alpha || validHoleFill h s w beta
@@ -439,15 +445,17 @@ validHoleFill h s w = \case
 -- == Inference
 
 -- | Returns a type in normal form
-infer :: HoleCtx -> VarCtx -> Trm -> Trm
+infer :: HoleCtx -> VarCtx -> Term -> Term
 infer gamma g = \case
   Uni -> Uni
   Pi x alpha beta -> Uni
   Lam x alpha b -> Pi x alpha beta where
     beta = infer gamma (insert x VarCtxItem{ typ = alpha , val = mzero} g) b
-  App f a -> sub beta x (norm g a) where
+  App f a -> substitute (Sub $ Map.singleton x beta) (norm g a) where
     Pi x alpha beta = infer gamma g f
-  Var x -> norm g (typ (index x g))
+  Var x -> 
+    norm g (typ $ case (lookup x g) of Just item -> item; Nothing -> error "here!")
+    -- norm g (typ (index x g))
   Hole h s w -> norm g (index h gamma)
   Let x alpha a b -> infer gamma beta b where
     beta = insert x VarCtxItem{ typ = alpha, val = Just a } g
@@ -460,7 +468,7 @@ infer gamma g = \case
 data Fix = Free | FixType | FixTerm deriving (Eq, Ord, Show)
 
 -- TODO: where do variables get term-fixed?
-fixIn :: VarId -> Trm -> Fix -> Fix
+fixIn :: VarId -> Term -> Fix -> Fix
 fixIn x a fix = case a of
   Uni -> Free
   Pi y alpha beta -> maximum [fixIn x alpha fixAlpha, fixIn x beta fixBeta] where
@@ -487,7 +495,7 @@ fixIn x a fix = case a of
          | otherwise = Free
     fixB = fix
 
-isHole :: Trm -> Bool
+isHole :: Term -> Bool
 isHole = \case 
   Hole _ _ _ -> True
   _ -> False
@@ -500,26 +508,26 @@ isHole = \case
 data Rewrite = Rewrite
   { gamma :: HoleCtx
   , maxFix :: Fix
-  , patternIn :: Trm
-  , patternOut :: Trm }
+  , patternIn :: Term
+  , patternOut :: Term }
   deriving (Show)
 
 -- | Makes a rewrite rule in this form:
 -- `gamma |- patternIn{fix <= maxFix} ~> patternOut{fix <= maxFix}`
-makeRewriteRule :: HoleCtx -> Trm -> Trm -> Rewrite
-makeRewriteRule gamma patternIn patternOut = Rewrite
+makeRewriteRule :: HoleCtx -> Term -> Term -> Fix -> Rewrite
+makeRewriteRule gamma patternIn patternOut maxFix = Rewrite
   { gamma
-  , maxFix = inferMaxFix gamma patternIn patternOut
+  , maxFix -- inferMaxFix gamma patternIn patternOut
   , patternIn
   , patternOut }
 
 -- | Infers the maximumity of for the patternIn/patternOut of a rewrite rule.
 -- check if patternInType ~ patternOutType unify for type fixedness
 -- check if patternIn ~ patternOut unify for term fixedness
-inferMaxFix :: HoleCtx -> Trm -> Trm -> Fix
+inferMaxFix :: HoleCtx -> Term -> Term -> Fix
 inferMaxFix gamma patternIn patternOut = FixTerm -- TODO
 
-tryRewriteAt_aux_Here :: Rewrite -> HoleCtx -> VarCtx -> Fix -> Trm -> Trm -> Gen (Maybe (Trm, HoleCtx, RenVar, RenHole, HoleSub))
+tryRewriteAt_aux_Here :: Rewrite -> HoleCtx -> VarCtx -> Fix -> Term -> Term -> Gen (Maybe (Term, HoleCtx, RenVar, RenHole, HoleSub))
 tryRewriteAt_aux_Here rew gamma g fix aTop a = do
   -- renew holes in rewrite patterns
   rho   <- renewHoles rew.gamma
@@ -559,7 +567,7 @@ tryRewriteAt_aux_Here rew gamma g fix aTop a = do
                     (substitute sigma1 a)
     return (patternOut, gamma <> gammaRew, r, rho, sigma2 <> sigma1)
 
-tryRewriteAt_aux :: Rewrite -> HoleCtx -> VarCtx -> Fix -> Trm -> Trm -> TrmIx -> Gen (Maybe (Trm, HoleCtx, RenVar, RenHole, HoleSub))
+tryRewriteAt_aux :: Rewrite -> HoleCtx -> VarCtx -> Fix -> Term -> Term -> TermIx -> Gen (Maybe (Term, HoleCtx, RenVar, RenHole, HoleSub))
 tryRewriteAt_aux rew gamma g fix aTop a ix = case (a, ix) of
   
   (Pi x alpha beta, Pi_alpha ix) ->
@@ -633,7 +641,7 @@ tryRewriteAt_aux rew gamma g fix aTop a ix = case (a, ix) of
   
   (a, Here) -> tryRewriteAt_aux_Here rew gamma g fix aTop a
 
-tryRewrite :: Rewrite -> TrmIx -> Prgm -> Gen (Maybe Prgm)
+tryRewrite :: Rewrite -> TermIx -> Prgm -> Gen (Maybe Prgm)
 tryRewrite rew ix prgm =
   tryRewriteAt_aux rew prgm.gammaTop mempty Free prgm.aTop prgm.aTop ix >>= \case
     Just (b, gamma, r, rho, sigma) -> do
@@ -645,13 +653,13 @@ tryRewrite rew ix prgm =
       return $ Just Prgm{ aTop, gammaTop }
     Nothing -> return Nothing
 
-tryRewrites :: [(Rewrite, TrmIx)] -> Prgm -> Gen (Maybe Prgm)
+tryRewrites :: [(Rewrite, TermIx)] -> Prgm -> Gen (Maybe Prgm)
 tryRewrites rew_ixs prgm = foldM go (Just prgm) rew_ixs where
   go mb_prgm (rew, ix) = case mb_prgm of
     Just prgm -> tryRewrite rew ix prgm
     Nothing -> return Nothing
 
-tryVariable :: VarId -> TrmIx -> Prgm -> Gen (Maybe Prgm)
+tryVariable :: VarId -> TermIx -> Prgm -> Gen (Maybe Prgm)
 tryVariable x ix prgm = do
   tryVariable_aux x ix prgm.gammaTop mempty prgm.aTop >>= \case
     Just sigma ->
@@ -659,7 +667,7 @@ tryVariable x ix prgm = do
                  , gammaTop = substitute sigma prgm.gammaTop }
     Nothing -> return Nothing
 
-tryVariable_aux :: VarId -> TrmIx -> HoleCtx -> VarCtx -> Trm -> Gen (Maybe HoleSub)
+tryVariable_aux :: VarId -> TermIx -> HoleCtx -> VarCtx -> Term -> Gen (Maybe HoleSub)
 tryVariable_aux y ix gamma g a = case (a, ix) of
   (Pi x alpha beta, Pi_alpha ix) -> tryVariable_aux y ix gamma g alpha
   (Pi x alpha beta, Pi_beta ix) -> tryVariable_aux y ix gamma (insert x VarCtxItem{ typ = alpha, val = Nothing } g) beta
@@ -675,6 +683,7 @@ tryVariable_aux y ix gamma g a = case (a, ix) of
     case lookup y g :: Maybe VarCtxItem of
       Just item -> return do
         -- unify `a`'s type with `y`'s type
+        return $! debug $ show "hello"
         let aType = infer gamma g a
         let yType = infer gamma g (Var y)
         sigma1 <- unify gamma g (norm g aType) (norm g yType)
@@ -686,72 +695,110 @@ tryVariable_aux y ix gamma g a = case (a, ix) of
         return (sigma2 <> sigma1)
       Nothing -> return Nothing
 
-rewrite_fill_U, rewrite_fill_Pi, rewrite_fill_lambda, rewrite_eta_reduce, rewrite_beta_reduce, rewrite_swap_parameters, rewrite_dig_parameter, rewrite_let_wrap :: Rewrite
+rewrite_fill_U, rewrite_fill_Pi, rewrite_fill_lambda, rewrite_eta_reduce, rewrite_beta_reduce, rewrite_swap_parameters, rewrite_dig_parameter, rewrite_wrap_let :: Rewrite
 
 rewrite_fill_U = makeRewriteRule
-  (Ctx [ (0, readTrm "U") ])
-  (readTrm "?0")
-  (readTrm "U")
+  (Ctx [ (0, readTerm "U") ])
+  (readTerm "?0")
+  (readTerm "U")
+  FixType
 
 rewrite_fill_Pi = makeRewriteRule
-  (Ctx [ (0, readTrm "U")
-       , (1, readTrm "U")
-       , (2, readTrm "U") ])
-  (readTrm "?0")
-  (readTrm "(Π #0 : ?1 . ?2)")
+  (Ctx [ (0, readTerm "U")
+       , (1, readTerm "U")
+       , (2, readTerm "U") ])
+  (readTerm "?0")
+  (readTerm "(Π #0 : ?1 . ?2)")
+  FixType
+
+rewrite_fill_app = makeRewriteRule
+  (Ctx [ (0, readTerm "U")
+       , (1, readTerm "?0")
+       , (2, readTerm "U")
+       , (3, readTerm "U")
+       , (4, readTerm "U")
+       , (5, readTerm "(Π #1 : ?3 . ?4)")
+       , (6, readTerm "?3")
+       , (7, readTerm "U")
+      ,  (8, readTerm "?7") ])
+  (readTerm "?1")
+  (readTerm "(let #0 : ?2 = (?5 ?6) in ?8)")
+  Free
 
 rewrite_fill_lambda = makeRewriteRule
-  (Ctx [ (0, readTrm "U")
-       , (1, readTrm "?0")
-       , (2, readTrm "U")
-       , (3, readTrm "U")
-       , (4, readTrm "?3") ])
-  (readTrm "?1")
-  (readTrm "(λ #0 : ?2 . ?4)")
+  (Ctx [ (0, readTerm "U")
+       , (1, readTerm "?0")
+       , (2, readTerm "U")
+       , (3, readTerm "U")
+       , (4, readTerm "?3") ])
+  (readTerm "?1")
+  (readTerm "(λ #0 : ?2 . ?4)")
+  Free
 
 rewrite_eta_reduce = makeRewriteRule
-  (Ctx [ (0, readTrm "U")
-        , (1, readTrm "U")
-        , (2, readTrm "(Π #0 : ?0 . ?1)")
-        , (3, readTrm "?0") ])
-  (readTrm "(λ #0 : ?0 . (?2 #0))")
-  (readTrm "?2")
+  (Ctx [ (0, readTerm "U")
+        , (1, readTerm "U")
+        , (2, readTerm "(Π #0 : ?0 . ?1)")
+        , (3, readTerm "?0") ])
+  (readTerm "(λ #0 : ?0 . (?2 #0))")
+  (readTerm "?2")
+  FixTerm
 
 rewrite_beta_reduce = makeRewriteRule
-  (Ctx [ (0, readTrm "U")
-        , (1, readTrm "U")
-        , (2, readTrm "?0")
-        , (3, readTrm "?1") ])
-  (readTrm "((λ #0 : ?0 . ?2) ?3)")
-  (readTrm "?2[#0 = ?3]")
-
+  (Ctx [ (0, readTerm "U")
+        , (1, readTerm "U")
+        , (2, readTerm "?0")
+        , (3, readTerm "?1") ])
+  (readTerm "((λ #0 : ?0 . ?2) ?3)")
+  (readTerm "?2[#0 = ?3]")
+  FixTerm
 
 rewrite_swap_parameters = makeRewriteRule
-  (Ctx [ (0, readTrm "U")
-       , (1, readTrm "U")
-       , (2, readTrm "U")
-       , (3, readTrm "?2") ])
-  (readTrm "(λ #0 : ?0 . (λ #1 : ?1 . ?3))")
-  (readTrm "(λ #2 : ?1 . (λ #3 : ?0 . ?3))")
+  (Ctx [ (0, readTerm "U")
+       , (1, readTerm "U")
+       , (2, readTerm "U")
+       , (3, readTerm "?2") ])
+  (readTerm "(λ #0 : ?0 . (λ #1 : ?1 . ?3))")
+  (readTerm "(λ #2 : ?1 . (λ #3 : ?0 . ?3))")
+  Free
 
 rewrite_dig_parameter = makeRewriteRule
-  (Ctx [ (0, readTrm "U")
-        , (1, readTrm "U")
-        , (2, readTrm "?0")
-        , (3, readTrm "?1")
+  (Ctx [ (0, readTerm "U")
+        , (1, readTerm "U")
+        , (2, readTerm "?0")
+        , (3, readTerm "?1")
         ])
-  (readTrm "(λ #0 : ?0 . ?3)")
-  (readTrm "?3[?0 = ?2]")
+  (readTerm "(λ #0 : ?0 . ?3)")
+  (readTerm "?3[?0 = ?2]")
+  Free 
 
-rewrite_let_wrap = makeRewriteRule 
-  (Ctx [ (0, readTrm "U")
-        , (1, readTrm "U")
-        , (2, readTrm "?0")
-        , (3, readTrm "?1") ])
-  (readTrm "?3")
-  (readTrm "(let #0 : ?1 = ?2 in ?3)")
+rewrite_wrap_let = makeRewriteRule 
+  (Ctx [ (0, readTerm "U")
+       , (1, readTerm "U")
+       , (2, readTerm "?0")
+       , (3, readTerm "?1") ])
+  (readTerm "?3")
+  (readTerm "(let #0 : ?1 = ?2 in ?3)")
+  FixTerm
 
-getMaxVarId :: VarId -> Trm -> VarId
+rewrite_unwrap_let = makeRewriteRule
+  (Ctx [ (0, readTerm "U")
+       , (1, readTerm "U")
+       , (2, readTerm "?0")
+       , (3, readTerm "?1") ])
+  (readTerm "(let #0 : ?1 = ?2 in ?3)")
+  (readTerm "?3[#0 = ?2]")
+  FixTerm
+
+rewrite_wrap_lambda = makeRewriteRule
+  (Ctx [ (0, readTerm "U")
+       , (1, readTerm "?0")
+       , (2, readTerm "U") ])
+  (readTerm "?1")
+  (readTerm "(λ #0 : ?2 . ?1[#0])")
+  Free
+
+getMaxVarId :: VarId -> Term -> VarId
 getMaxVarId varId = \case
   Uni -> varId
   Pi x alpha beta -> maximum [varId, x, getMaxVarId varId alpha, getMaxVarId varId beta]
@@ -761,7 +808,7 @@ getMaxVarId varId = \case
   Let x alpha a b -> maximum [varId, x, getMaxVarId varId alpha, getMaxVarId varId a, getMaxVarId varId b]
   Hole _ s w -> maximum (foldl max varId ((getMaxVarId varId <$> s)) : w)
 
-getMaxHoleId :: HoleId -> Trm -> HoleId
+getMaxHoleId :: HoleId -> Term -> HoleId
 getMaxHoleId holeId = \case
   Uni -> holeId
   Pi x alpha beta -> maximum [holeId, getMaxHoleId holeId alpha, getMaxHoleId holeId beta]
@@ -771,22 +818,27 @@ getMaxHoleId holeId = \case
   Let x alpha a b -> maximum [holeId, getMaxHoleId holeId alpha, getMaxHoleId holeId a, getMaxHoleId holeId b]
   Hole h s w -> foldl max (holeId `max` h) (getMaxHoleId holeId <$> s)
 
-makeGenState :: Prgm -> GenState
-makeGenState prgm = GenState
-  { holeId = maximum (0 : fmap fst (case prgm.gammaTop of Ctx ctx -> ctx))
-  , varId = getMaxVarId 0 prgm.aTop
-  , stdGen = Random.mkStdGen 0 }
+makeGenState :: Prgm -> IO GenState
+makeGenState prgm = do
+  stdGen <- Random.newStdGen
+  return GenState
+    { holeId = maximum (0 : fmap fst (case prgm.gammaTop of Ctx ctx -> ctx))
+    , varId = getMaxVarId 0 prgm.aTop
+    , stdGen }
 
 -- |
 -- == Generation
+
+-- |
+-- === Gen
+
+type Gen a = StateT GenState IO a
 
 data GenState = GenState
   { holeId :: HoleId
   , varId :: VarId
   , stdGen :: Random.StdGen }
   deriving (Show)
-
-type Gen a = StateT GenState IO a
 
 nextHoleId :: Gen HoleId
 nextHoleId = do
@@ -807,6 +859,105 @@ nextRandR iMin iMax = do
   modify $ \st -> st { stdGen = g' }
   return i
 
+choice :: [a] -> Gen a
+choice as = (as !!) <$> nextRandR 0 (length as - 1)
+
+choiceWeighted :: [(Int, a)] -> Gen a
+choiceWeighted as = go as 0 <$> nextRandR 0 ((sum . fmap fst $ as) - 1) where
+  go :: [(Int, a)] -> Int -> Int -> a
+  go ((w, a) : as) acc r = if r < acc + w then a else go as (acc + w) r
+
+-- |
+-- === Generating Random Well-Typed Terms
+
+prgmInit :: Prgm
+prgmInit = Prgm
+  { aTop = readTerm "?1"
+  , gammaTop = Ctx [ (0, readTerm "U")
+                    , (1, readTerm "?0") ] }
+
+runGenTerm :: IO Term
+runGenTerm = do
+  genSt <- makeGenState prgmInit
+  aTop . fst <$> runStateT (genTerm prgmInit) genSt
+
+genTerm :: Prgm -> Gen Prgm
+genTerm prgmInit = fst <$> while c k (prgmInit, 0) where
+  c :: (Prgm, Int) -> Gen Bool
+  c = return . hasHoles . aTop . fst
+  k :: (Prgm, Int) -> Gen (Prgm, Int)
+  k (prgm, time) = do
+    lift $ print prgm.aTop
+    -- choose TermIx `ix`
+    ix <- genTermIx prgm.aTop
+    -- collect variables `xs` in scope at `ix`
+    let g@(Ctx ctx) = getVarCtxAt prgm.aTop ix
+    lift $ print g
+    -- choose rewrite or variable fill
+    let choices =
+          [ (time, tryRewrite rewrite_fill_U ix prgm)
+          -- , (1, tryRewrite rewrite_fill_Pi ix prgm)
+          , (4, tryRewrite rewrite_fill_lambda ix prgm)
+          , (8, tryRewrite rewrite_fill_app ix prgm)
+          , (4, tryRewrite rewrite_wrap_lambda ix prgm)
+          -- , (4, tryRewrite rewrite_unwrap_let ix prgm)
+          ] 
+          <>
+          [ (2 * time, tryVariable x ix prgm) | (x, alpha) <- ctx ]
+    update <- choiceWeighted choices
+    update >>= \case
+      Just prgm -> return (prgm, time + 1)
+      Nothing -> k (prgm, time) -- TODO: simple loop?
+
+getVarCtxAt :: Term -> TermIx -> VarCtx
+getVarCtxAt a ix = case (a, ix) of
+  (Pi x alpha beta, Pi_alpha ix) -> getVarCtxAt alpha ix
+  (Pi x alpha beta, Pi_beta ix) -> insert x VarCtxItem{ typ = alpha, val = Nothing } $ getVarCtxAt beta ix
+  (Lam x alpha b, Lam_alpha ix) -> getVarCtxAt alpha ix
+  (Lam x alpha b, Lam_b ix) -> insert x VarCtxItem{ typ = alpha, val = Nothing } $ getVarCtxAt b ix
+  (Let x alpha a b, Let_alpha ix) -> getVarCtxAt alpha ix
+  (Let x alpha a b, Let_a ix) -> getVarCtxAt a ix
+  (Let x alpha a b, Let_b ix) -> insert x VarCtxItem{ typ = alpha, val = Just a } $ getVarCtxAt b ix
+  (App f a, App_f ix) -> getVarCtxAt f ix
+  (App f a, App_a ix) -> getVarCtxAt a ix
+  (_, Here) -> mempty
+  _ -> error $ show (a, ix)
+
+-- weight holes higher
+genTermIx :: Term -> Gen TermIx
+genTermIx a = choice (getTermIxs a)
+    
+getTermIxs :: Term -> [TermIx]
+getTermIxs = \case
+  Uni -> [Here]
+  Pi x alpha beta -> [Pi_alpha ix | ix <- getTermIxs alpha] <>
+                     [Pi_beta ix | ix <- getTermIxs beta]
+  Lam x alpha b -> [Lam_alpha ix | ix <- getTermIxs alpha] <>
+                   [Lam_b ix | ix <- getTermIxs b]
+  Var x -> [Here]
+  App f a -> [App_f ix | ix <- getTermIxs f] <>
+             [App_a ix | ix <- getTermIxs a]
+  Hole h s w -> replicate 10 Here
+  Let x alpha a b -> [Let_alpha ix | ix <- getTermIxs alpha] <>
+                     [Let_a ix | ix <- getTermIxs a] <>
+                     [Let_b ix | ix <- getTermIxs b]
+
+while :: Monad m => (a -> m Bool) -> (a -> m a) -> a -> m a
+while c k a = do
+  c a >>= \case 
+    True -> while c k =<< k a
+    False -> return a
+
+hasHoles :: Term -> Bool
+hasHoles = \case
+  Uni -> False
+  Pi _ alpha beta -> hasHoles alpha || hasHoles beta
+  Lam _ alpha b -> hasHoles alpha || hasHoles b
+  App f a -> hasHoles f || hasHoles a
+  Var _ -> False
+  Hole _ _ _ -> True
+  Let x alpha a b -> hasHoles alpha || hasHoles a || hasHoles b
+
 -- |
 -- === Renewable
 
@@ -818,9 +969,9 @@ renewHoles (Ctx ctx) =
 -- |
 -- === RenewableVars
 
-renewVars :: [Trm] -> Gen RenVar
+renewVars :: [Term] -> Gen RenVar
 renewVars = fmap (Ren . Map.fromList) . foldM (flip go) [] where
-  go :: Trm -> [(VarId, VarId)] -> Gen [(VarId, VarId)]
+  go :: Term -> [(VarId, VarId)] -> Gen [(VarId, VarId)]
   go a ren = case a of
     Uni -> return ren
     Pi x alpha beta -> do x' <- nextVarId
@@ -836,8 +987,8 @@ renewVars = fmap (Ren . Map.fromList) . foldM (flip go) [] where
 -- |
 -- == Parsing
 
-readTrm :: String -> Trm
-readTrm = unsafeEvalParser parseTrm
+readTerm :: String -> Term
+readTerm = unsafeEvalParser parseTerm
 
 type Parser a = StateT String (Except String) a
 
@@ -928,10 +1079,10 @@ parseFirstOf (p : ps) = do
     Nothing -> put str0 >> parseFirstOf ps
 
 -- |
--- === Parsing Trm
+-- === Parsing Term
 
-parseTrm :: Parser Trm
-parseTrm = do
+parseTerm :: Parser Term
+parseTerm = do
   mb_a <- parseFirstOf . map lexeme $
     [ parseUni
     , parsePi
@@ -942,9 +1093,9 @@ parseTrm = do
     , parseVar ]
   case mb_a of
     Just a -> return a
-    Nothing -> throwError $ "Attempted to parseTrm but failed all cases"
+    Nothing -> throwError $ "Attempted to parseTerm but failed all cases"
 
-parseUni, parsePi, parseLam, parseApp, parseVar, parseHole, parseLet :: Parser Trm
+parseUni, parsePi, parseLam, parseApp, parseVar, parseHole, parseLet :: Parser Term
 
 parseUni = do
   lexeme $ parseString "U"
@@ -955,9 +1106,9 @@ parsePi = do
   lexeme $ parseString "Π"
   x     <- lexeme $ parseVarId
   lexeme $ parseString ":"
-  alpha <- lexeme $ parseTrm
+  alpha <- lexeme $ parseTerm
   lexeme $ parseString "."
-  beta  <- lexeme $ parseTrm
+  beta  <- lexeme $ parseTerm
   lexeme $ parseString ")"
   return $ Pi x alpha beta 
 
@@ -966,16 +1117,16 @@ parseLam = do
   lexeme $ parseString "λ"
   x     <- lexeme $ parseVarId
   lexeme $ parseString ":"
-  alpha <- parseTrm
+  alpha <- parseTerm
   lexeme $ parseString "."
-  b     <- lexeme $ parseTrm
+  b     <- lexeme $ parseTerm
   lexeme $ parseString ")"
   return $ Lam x alpha b 
 
 parseApp = do
   lexeme $ parseString "("
-  f     <- lexeme $ parseTrm
-  a     <- lexeme $ parseTrm
+  f     <- lexeme $ parseTerm
+  a     <- lexeme $ parseTerm
   lexeme $ parseString ")"
   return $ App f a 
 
@@ -988,11 +1139,11 @@ parseLet = do
   lexeme $ parseString "let"
   x     <- lexeme $ parseVarId
   lexeme $ parseString ":"
-  alpha <- parseTrm
+  alpha <- parseTerm
   lexeme $ parseString "="
-  a     <- lexeme $ parseTrm
+  a     <- lexeme $ parseTerm
   lexeme $ parseString "in"
-  b     <- lexeme $ parseTrm
+  b     <- lexeme $ parseTerm
   lexeme $ parseString ")"
   return $ Let x alpha a b 
 
@@ -1031,11 +1182,11 @@ parseVarWkn = do
   lexeme $ parseString "]"
   return w
 
-parseVarSubItem :: Parser (VarId, Trm)
+parseVarSubItem :: Parser (VarId, Term)
 parseVarSubItem = do
   x <- lexeme $ parseVarId
   lexeme $ parseString "="
-  a <- lexeme $ parseTrm
+  a <- lexeme $ parseTerm
   return (x, a)
 
 parseMany :: Parser a -> Parser [a]
