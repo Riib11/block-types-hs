@@ -111,6 +111,9 @@ instance Show VarCtxItem where
 instance Ord k => Indexable (Ctx k v) k v where
   index k (Ctx ctx) = Maybe.fromJust $ List.lookup k ctx
 
+instance Ord k => Lookupable (Ctx k v) k v where
+  lookup k (Ctx ctx) = List.lookup k ctx
+
 instance Ord k => Insertable (Ctx k v) k v where
   insert k v (Ctx ctx) = Ctx $ (k, v) : ctx
 
@@ -647,6 +650,41 @@ tryRewrites rew_ixs prgm = foldM go (Just prgm) rew_ixs where
   go mb_prgm (rew, ix) = case mb_prgm of
     Just prgm -> tryRewrite rew ix prgm
     Nothing -> return Nothing
+
+tryVariable :: VarId -> TrmIx -> Prgm -> Gen (Maybe Prgm)
+tryVariable x ix prgm = do
+  tryVariable_aux x ix prgm.gammaTop mempty prgm.aTop >>= \case
+    Just sigma ->
+      return $ Just Prgm{ aTop = substitute sigma prgm.aTop
+                 , gammaTop = substitute sigma prgm.gammaTop }
+    Nothing -> return Nothing
+
+tryVariable_aux :: VarId -> TrmIx -> HoleCtx -> VarCtx -> Trm -> Gen (Maybe HoleSub)
+tryVariable_aux y ix gamma g a = case (a, ix) of
+  (Pi x alpha beta, Pi_alpha ix) -> tryVariable_aux y ix gamma g alpha
+  (Pi x alpha beta, Pi_beta ix) -> tryVariable_aux y ix gamma (insert x VarCtxItem{ typ = alpha, val = Nothing } g) beta
+  (Lam x alpha b, Lam_alpha ix) -> tryVariable_aux y ix gamma g alpha
+  (Lam x alpha b, Lam_b ix) -> tryVariable_aux y ix gamma (insert x VarCtxItem{ typ = alpha, val = Nothing } g) b
+  (App f a, App_f ix) -> tryVariable_aux y ix gamma g f
+  (App f a, App_a ix) -> tryVariable_aux y ix gamma g a
+  (Let x alpha a b, Let_alpha ix) -> tryVariable_aux y ix gamma g alpha
+  (Let x alpha a b, Let_a ix) -> tryVariable_aux y ix gamma g a
+  (Let x alpha a b, Let_b ix) -> tryVariable_aux y ix gamma (insert x VarCtxItem{ typ = alpha, val = Just a } g) b
+  (a, Here) ->
+    -- if variable is in `g`
+    case lookup y g :: Maybe VarCtxItem of
+      Just item -> return do
+        -- unify `a`'s type with `y`'s type
+        let aType = infer gamma g a
+        let yType = infer gamma g (Var y)
+        sigma1 <- unify gamma g (norm g aType) (norm g yType)
+        -- unify `a` with `y`
+        sigma2 <- unify (substitute sigma1 gamma)
+                        (substitute sigma1 g)
+                        (substitute sigma1 (Var y))
+                        (substitute sigma1 a)
+        return (sigma2 <> sigma1)
+      Nothing -> return Nothing
 
 rewrite_fill_U, rewrite_fill_Pi, rewrite_fill_lambda, rewrite_eta_reduce, rewrite_beta_reduce, rewrite_swap_parameters, rewrite_dig_parameter, rewrite_let_wrap :: Rewrite
 

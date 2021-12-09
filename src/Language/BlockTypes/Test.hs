@@ -21,33 +21,72 @@ import Language.BlockTypes.Base
 data Test = Test
   { name :: String
   , prgm :: Prgm
-  , cont :: Prgm -> Gen () }
+  , cont :: Prgm -> Gen (Maybe Prgm) }
 
 runTest :: Test -> IO ()
 runTest test = do
-  putStrLn $ "[BEGIN TEST] " ++ test.name
-  evalStateT (test.cont test.prgm) (makeGenState test.prgm)
-  putStrLn $ "[End TEST] " ++ test.name
+  putStrLn $ "[TEST] " ++ test.name
+  putStrLn $ "   input: " ++ show test.prgm
+  evalStateT (test.cont test.prgm) (makeGenState test.prgm) >>= \case 
+    Just prgm -> do
+      putStrLn $ "  output: " ++ show prgm
+    Nothing ->
+      putStrLn "FAILURE"
+
+testVar :: IO ()
+testVar = do
+  let prgm = Prgm{ aTop = readTrm "(λ #0 : U . ?1)"
+                 , gammaTop = Ctx 
+                    [ (0, readTrm "U")
+                    , (1, readTrm "?0") ] }
+  print =<< evalStateT
+    (do
+      tryVariable 0 (Lam_b Here) prgm
+    )
+    (makeGenState prgm)
 
 suite1 :: IO ()
-suite1 = do
-  runTest test1
+suite1 = mapM_ runTest
+  [
+    test1
+  , test2
+  , test3
+  ]
 
 test1 :: Test
 test1 = Test
-  { name = "test1"
+  { name = "construct (Π x : U . U)"
   , prgm = Prgm
       { gammaTop = Ctx
           [ (0, readTrm "U")
           , (1, readTrm "?0") ]
       , aTop = readTrm "?1" }
-  , cont = \prgm -> do
-      lift $ print prgm
-      Just prgm <- tryRewrite (rewrites Map.! "fill Π") Free Here prgm
-      lift $ print prgm
-      Just prgm <- tryRewrite (rewrites Map.! "fill U") Free (Pi_alpha Here) prgm
-      lift $ print prgm
-      Just prgm <- tryRewrite (rewrites Map.! "fill U") Free (Pi_beta Here) prgm 
-      lift $ print prgm
+  , cont = tryRewrites
+      [ (rewrite_fill_Pi, Here)
+      , (rewrite_fill_U, Pi_alpha Here)
+      , (rewrite_fill_U, Pi_beta Here) ]
   }
 
+test2 :: Test
+test2 = Test
+  { name = "construct (λ x : U . U)"
+  , prgm = Prgm
+      { gammaTop = Ctx
+          [ (0, readTrm "U")
+          , (1, readTrm "?0") ]
+      , aTop = readTrm "?1" }
+  , cont = tryRewrites
+      [ (rewrite_fill_lambda, Here)
+      , (rewrite_fill_U, Lam_alpha Here)
+      , (rewrite_fill_U, Lam_b Here) ]
+  }
+
+test3 :: Test
+test3 = Test
+  { name = "simple β-reduction of ((λ x : U . x) U)" 
+  , prgm = Prgm
+      { gammaTop = Ctx []
+      , aTop = readTrm "((λ #0 : U . #0) U)" }
+  , cont = tryRewrites
+      [ (rewrite_beta_reduce, Here) ]
+  }
