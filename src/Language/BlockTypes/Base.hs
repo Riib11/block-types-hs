@@ -516,54 +516,6 @@ makeRewriteRule gamma patternIn patternOut = Rewrite
 inferMaxFix :: HoleCtx -> Trm -> Trm -> Fix
 inferMaxFix gamma patternIn patternOut = FixTerm -- TODO
 
--- -- | Tries to rewrite the term `a`, of fixness `fix`, in contexts `gamma` and `g`, with rewrite `rew`, after renewing the holes/variables of the input and output patterns. Returns the resulting unifying hole substitution and the (unsubstituted) output pattern.
--- -- In the result `Just (a, a', r, rho, sigma)`, `a` and `a'` have had `r` and `rho` applied, but not `sigma`.
--- tryRewrite :: Rewrite -> HoleCtx -> VarCtx -> Fix -> Trm -> Gen (Maybe (Trm, Trm, RenVar, RenHole, HoleSub))
--- tryRewrite rew gamma g fix a = do
---   -- lift $ putStrLn $ "rewrite:\n  " ++ show rew.patternIn ++ "~~>\n  " ++ show rew.patternOut
-  
---   -- renew holes in rewrite patterns
---   rho   <- renewHoles rew.gamma
---   gammaRew   <- return $ rename rho rew.gamma
---   patternIn  <- return $ rename rho rew.patternIn
---   patternOut <- return $ rename rho rew.patternOut
---   -- lift $ putStrLn $ "rho:\n  " ++ show rho
-  
---   -- renew variables
---   r <- renewVars [patternIn, patternOut, a]
---   -- rename variables in rewrite pattern
---   gammaRew   <- return $ rename r gammaRew
---   patternIn  <- return $ rename r patternIn
---   patternOut <- return $ rename r patternOut
---   -- rename variables in target
---   gamma      <- return $ rename r gamma
---   g          <- return $ rename r g
---   a          <- return $ rename r a
-  
---   -- lift $ putStrLn $ "r:\n  " ++ show r
---   -- lift $ putStrLn $ "gammaRew   = " ++ show gammaRew
---   -- lift $ putStrLn $ "patternIn  = " ++ show patternIn
---   -- lift $ putStrLn $ "patternOut = " ++ show patternOut
---   -- lift $ putStrLn $ "gamma      = " ++ show gamma
---   -- lift $ putStrLn $ "g          = " ++ show g
---   -- lift $ putStrLn $ "a          = " ++ show a
-
---   --
---   return do
---     -- check maximum fix
---     guard $ fix <= rew.maxFix
---     -- unify patternIn's type with target's type
---     let patternInType = infer gammaRew mempty patternIn
---     let alpha = infer gamma g a
---     sigma1 <- unify gammaRew g (norm g patternInType) (norm g alpha)
---     -- unify patternIn with target
---     sigma2 <- unify (substitute sigma1 gammaRew)
---                     (substitute sigma1 g)
---                     (substitute sigma1 patternIn)
---                     (substitute sigma1 a)
---     return (patternIn, patternOut, r, rho, sigma2 <> sigma1)
-
-
 tryRewriteAt_aux_Here :: Rewrite -> HoleCtx -> VarCtx -> Fix -> Trm -> Trm -> Gen (Maybe (Trm, HoleCtx, RenVar, RenHole, HoleSub))
 tryRewriteAt_aux_Here rew gamma g fix aTop a = do
   -- renew holes in rewrite patterns
@@ -580,15 +532,16 @@ tryRewriteAt_aux_Here rew gamma g fix aTop a = do
   g          <- return $ rename r g
   a          <- return $ rename r a
   -- 
-  lift $ putStrLn $ "rho        = " ++ show rho
-  lift $ putStrLn $ "r          = " ++ show r
-  lift $ putStrLn $ "gammaRew   = " ++ show gammaRew
-  lift $ putStrLn $ "patternIn  = " ++ show patternIn
-  lift $ putStrLn $ "patternOut = " ++ show patternOut
-  lift $ putStrLn $ "gamma      = " ++ show gamma
-  lift $ putStrLn $ "g          = " ++ show g
-  lift $ putStrLn $ "a          = " ++ show a
-  --
+  -- lift $ putStrLn $ unlines
+  --   [ "rho        = " ++ show rho
+  --   , "r          = " ++ show r 
+  --   , "gammaRew   = " ++ show gammaRew 
+  --   , "patternIn  = " ++ show patternIn
+  --   , "patternOut = " ++ show patternOut
+  --   , "gamma      = " ++ show gamma
+  --   , "g          = " ++ show g
+  --   , "a          = " ++ show a ]
+  -- 
   return do
     -- check maximum fix
     guard $ fix <= rew.maxFix
@@ -596,13 +549,11 @@ tryRewriteAt_aux_Here rew gamma g fix aTop a = do
     let patternInType = infer gammaRew mempty patternIn
     let alpha = infer gamma g a
     sigma1 <- unify gammaRew g (norm g patternInType) (norm g alpha)
-    return $! debug $ "types: " ++ show (norm g alpha, norm g patternInType, sigma1)
     -- unify patternIn with target
     sigma2 <- unify (substitute sigma1 (gamma <> gammaRew))
                     (substitute sigma1 g)
                     (substitute sigma1 patternIn)
                     (substitute sigma1 a)
-    return $! debug $ "terms: " ++ show (norm g a, norm g patternIn, sigma2)
     return (patternOut, gamma <> gammaRew, r, rho, sigma2 <> sigma1)
 
 tryRewriteAt_aux :: Rewrite -> HoleCtx -> VarCtx -> Fix -> Trm -> Trm -> TrmIx -> Gen (Maybe (Trm, HoleCtx, RenVar, RenHole, HoleSub))
@@ -679,9 +630,9 @@ tryRewriteAt_aux rew gamma g fix aTop a ix = case (a, ix) of
   
   (a, Here) -> tryRewriteAt_aux_Here rew gamma g fix aTop a
 
-tryRewrite :: Rewrite -> Fix -> TrmIx -> Prgm -> Gen (Maybe Prgm)
-tryRewrite rew fix ix prgm =
-  tryRewriteAt_aux rew prgm.gammaTop mempty fix prgm.aTop prgm.aTop ix >>= \case
+tryRewrite :: Rewrite -> TrmIx -> Prgm -> Gen (Maybe Prgm)
+tryRewrite rew ix prgm =
+  tryRewriteAt_aux rew prgm.gammaTop mempty Free prgm.aTop prgm.aTop ix >>= \case
     Just (b, gamma, r, rho, sigma) -> do
       aTop <- return $ rename r prgm.aTop
       aTop <- return $ rename rho aTop
@@ -691,76 +642,76 @@ tryRewrite rew fix ix prgm =
       return $ Just Prgm{ aTop, gammaTop }
     Nothing -> return Nothing
 
+tryRewrites :: [(Rewrite, TrmIx)] -> Prgm -> Gen (Maybe Prgm)
+tryRewrites rew_ixs prgm = foldM go (Just prgm) rew_ixs where
+  go mb_prgm (rew, ix) = case mb_prgm of
+    Just prgm -> tryRewrite rew ix prgm
+    Nothing -> return Nothing
 
-rewrites :: Map.Map String Rewrite
-rewrites = Map.fromList
-  [ ( "fill U"
-    , makeRewriteRule
-        (Ctx [ (0, readTrm "U") ])
-        (readTrm "?0")
-        (readTrm "U") )
-  , ( "fill Π"
-    , makeRewriteRule
-        (Ctx [ (0, readTrm "U")
-             , (1, readTrm "U")
-             , (2, readTrm "U")
-             ])
-        (readTrm "?0")
-        (readTrm "(Π #0 : ?1 . ?2)") )
-  , ( "fill λ"
-    , makeRewriteRule
-        (Ctx [ (0, readTrm "U")
-             , (1, readTrm "?0")
-             , (2, readTrm "U")
-             , (3, readTrm "U")
-             , (4, readTrm "?3") ])
-        (readTrm "?1")
-        (readTrm "(λ #0 : ?2 . ?4)") )
-  , ( "η-reduce"
-      , makeRewriteRule
-          (Ctx [ (0, readTrm "U") -- alpha
-               , (1, readTrm "U") -- beta
-               , (2, readTrm "(Π #0 : ?0 . ?1)") -- f
-               , (3, readTrm "?0") -- x
-               ])
-          (readTrm "(λ #0 : ?0 . (?2 #0))")
-          (readTrm "?2") )
-  , ( "β-reduce"
-    , makeRewriteRule
-        (Ctx [ (0, readTrm "U") -- alpha
-             , (1, readTrm "U") -- beta
-             , (2, readTrm "?0") -- b
-             , (3, readTrm "?1") -- a
-             ])
-        (readTrm "((λ #0 : ?0 . ?2) ?3)")
-        (readTrm "?2[#0 = ?3]") )
-  , ( "swap parameters"
-    , makeRewriteRule
-        (Ctx [ (0, readTrm "U") -- alpha
-             , (1, readTrm "U") -- beta
-             , (2, readTrm "U") -- epsilon
-             , (3, readTrm "?2") -- e
-             ])
-        (readTrm "(λ #0 : ?0 . (λ #1 : ?1 . ?3))")
-        (readTrm "(λ #2 : ?1 . (λ #3 : ?0 . ?3))") )
-  , ( "dig parameter"
-    , makeRewriteRule
-        (Ctx [ (0, readTrm "U") -- alpha
-             , (1, readTrm "U") -- beta
-             , (2, readTrm "?0") -- a
-             , (3, readTrm "?1") -- b
-             ])
-        (readTrm "(λ #0 : ?0 . ?3)")
-        (readTrm "?3[?0 = ?2]") )
-  , ( "let-wrap"
-    , makeRewriteRule 
-        (Ctx [ (0, readTrm "U")
-             , (1, readTrm "U")
-             , (2, readTrm "?0")
-             , (3, readTrm "?1") ])
-        (readTrm "?3")
-        (readTrm "(let #0 : ?1 = ?2 in ?3)") )
-  ]
+rewrite_fill_U, rewrite_fill_Pi, rewrite_fill_lambda, rewrite_eta_reduce, rewrite_beta_reduce, rewrite_swap_parameters, rewrite_dig_parameter, rewrite_let_wrap :: Rewrite
+
+rewrite_fill_U = makeRewriteRule
+  (Ctx [ (0, readTrm "U") ])
+  (readTrm "?0")
+  (readTrm "U")
+
+rewrite_fill_Pi = makeRewriteRule
+  (Ctx [ (0, readTrm "U")
+       , (1, readTrm "U")
+       , (2, readTrm "U") ])
+  (readTrm "?0")
+  (readTrm "(Π #0 : ?1 . ?2)")
+
+rewrite_fill_lambda = makeRewriteRule
+  (Ctx [ (0, readTrm "U")
+       , (1, readTrm "?0")
+       , (2, readTrm "U")
+       , (3, readTrm "U")
+       , (4, readTrm "?3") ])
+  (readTrm "?1")
+  (readTrm "(λ #0 : ?2 . ?4)")
+
+rewrite_eta_reduce = makeRewriteRule
+  (Ctx [ (0, readTrm "U")
+        , (1, readTrm "U")
+        , (2, readTrm "(Π #0 : ?0 . ?1)")
+        , (3, readTrm "?0") ])
+  (readTrm "(λ #0 : ?0 . (?2 #0))")
+  (readTrm "?2")
+
+rewrite_beta_reduce = makeRewriteRule
+  (Ctx [ (0, readTrm "U")
+        , (1, readTrm "U")
+        , (2, readTrm "?0")
+        , (3, readTrm "?1") ])
+  (readTrm "((λ #0 : ?0 . ?2) ?3)")
+  (readTrm "?2[#0 = ?3]")
+
+
+rewrite_swap_parameters = makeRewriteRule
+  (Ctx [ (0, readTrm "U")
+       , (1, readTrm "U")
+       , (2, readTrm "U")
+       , (3, readTrm "?2") ])
+  (readTrm "(λ #0 : ?0 . (λ #1 : ?1 . ?3))")
+  (readTrm "(λ #2 : ?1 . (λ #3 : ?0 . ?3))")
+
+rewrite_dig_parameter = makeRewriteRule
+  (Ctx [ (0, readTrm "U")
+        , (1, readTrm "U")
+        , (2, readTrm "?0")
+        , (3, readTrm "?1")
+        ])
+  (readTrm "(λ #0 : ?0 . ?3)")
+  (readTrm "?3[?0 = ?2]")
+
+rewrite_let_wrap = makeRewriteRule 
+  (Ctx [ (0, readTrm "U")
+        , (1, readTrm "U")
+        , (2, readTrm "?0")
+        , (3, readTrm "?1") ])
+  (readTrm "?3")
+  (readTrm "(let #0 : ?1 = ?2 in ?3)")
 
 getMaxVarId :: VarId -> Trm -> VarId
 getMaxVarId varId = \case
@@ -787,61 +738,6 @@ makeGenState prgm = GenState
   { holeId = maximum (0 : fmap fst (case prgm.gammaTop of Ctx ctx -> ctx))
   , varId = getMaxVarId 0 prgm.aTop
   , stdGen = Random.mkStdGen 0 }
-
--- run_rewrite_test :: String -> HoleCtx -> VarCtx -> Fix -> Trm -> IO ()
--- run_rewrite_test rewName gamma g fix a = do
---   let rew = rewrites Map.! rewName
---   (res, _) <- runStateT (tryRewrite rew gamma g fix a) (makeGenState a)
---   case res of
---     Just (patternIn, patternOut, r, rho, sigma) -> do
---       let a' = substitute sigma patternOut
---       let g' = substitute sigma . rename r . rename rho $ g
---       putStrLn $ unlines
---         [ "[SUCCEEDED]"
---         , "rewrite rule: " ++ rewName
---         , "  " ++ show patternIn ++ " ~~>"
---         , "  " ++ show patternOut
---         , "rewrite:"
---         , "  " ++ show a ++ " ~~>"
---         , "  " ++ show a'
---         , "  " ++ "in context:   " ++ show g'
---         , "  " ++ "via var ren:  " ++ show r
---         , "  " ++ "via hole ren  " ++ show rho
---         , "  " ++ "via hole sub: " ++ show sigma ]
---     Nothing ->
---       putStrLn $ "\nfailed test for rewrite rule '" ++ rewName ++ "'"
-
--- rewrite_test1 :: IO ()
--- rewrite_test1 = run_rewrite_test
---   "β-reduce"
---   mempty
---   mempty
---   Free
---   (readTrm "((λ #0 : U . #0) U)")
-
--- rewrite_test2 :: IO ()
--- rewrite_test2 = run_rewrite_test
---   "β-reduce"
---   mempty
---   mempty
---   Free
---   (readTrm "((λ #0 : U . #0) (λ #1 : U . #1))")
-
--- rewrite_test3 :: IO ()
--- rewrite_test3 = run_rewrite_test
---   "η-reduce"
---   mempty
---   (Ctx [ (0, VarCtxItem{ typ = readTrm "(Π #2 : U . U)", val = mzero }) ])
---   Free
---   (readTrm "(λ #1 : U . (#0 #1))")
-
--- rewrite_test4 :: IO ()
--- rewrite_test4 = run_rewrite_test -- TODO
---   "fill Π"
---   (Ctx [ (0, readTrm "U") ])
---   mempty
---   Free
---   (readTrm "?0")
 
 -- |
 -- == Generation
