@@ -26,6 +26,8 @@ dependencies:
   - mtl
   - containers
   - random
+  - hlist
+  - template-haskell
 
 library:
   source-dirs: src
