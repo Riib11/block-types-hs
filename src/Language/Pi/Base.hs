@@ -103,7 +103,7 @@ semantics sem gamma (Pi alpha beta) = pi sem alpha' beta'
 renaming :: Semantics Var Trm
 renaming =
   Semantics
-    { thinnable = \a gamma -> lookup gamma a,
+    { thinnable = \a rho -> lookup rho a,
       uni = Uni,
       var = Var,
       pi = \alpha beta -> undefined,
@@ -114,7 +114,7 @@ renaming =
 substitution :: Semantics Trm Trm
 substitution =
   Semantics
-    { thinnable = \a gamma -> ren gamma a,
+    { thinnable = \a rho -> ren rho a,
       uni = Uni,
       var = id,
       pi = \alpha beta -> Pi alpha (beta weaken (Var Z)),
