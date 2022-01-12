@@ -1,6 +1,5 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 
 module Language.Pi.Normalization where
 

@@ -28,6 +28,9 @@ library
       Language.BlockTypes.Base
       Language.BlockTypes.Test
       Language.Pi.Base
+      Language.Pi.Inference
+      Language.Pi.Normalization
+      Language.Pi.Printing
       Language.Stlc.Base
       Language.Stlc.Parsing
       Language.Stlc.Printing
