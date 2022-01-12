@@ -37,7 +37,7 @@ inference =
         (a, alpha) <- ma
         case phi of
           Pi _ beta -> return (App f a, sub (subEnv a) beta)
-          _ -> error $ "Attempted to infer type of application with applicant type " ++ show phi ++ "."
+          _ -> error $ "Attempted to infer type of badly-type application, with applicant type " ++ show phi ++ "."
     }
 
 {-
