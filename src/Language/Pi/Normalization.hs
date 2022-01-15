@@ -28,27 +28,27 @@ data Sem
   | SemLam Sem (Thinning -> Sem -> Sem)
   | SemNeu Neu
 
-reify :: Nrm -> Sem -> Nrm
-reify NrmUni SemUni = NrmUni
-reify NrmUni (SemPi alpha beta) =
+reify :: Sem -> Sem -> Nrm
+reify SemUni SemUni = NrmUni
+reify SemUni (SemPi alpha beta) =
   NrmPi
-    (reify NrmUni alpha)
-    (reify NrmUni (beta weaken (SemNeu (NeuVar Z))))
-reify (NrmPi _ beta) (SemLam alpha b) =
+    (reify SemUni alpha)
+    (reify SemUni (beta weaken (SemNeu (NeuVar Z))))
+reify (SemPi _ beta) (SemLam alpha b) =
   NrmLam
-    (reify NrmUni alpha)
-    (reify beta (b weaken (SemNeu (NeuVar Z))))
+    (reify SemUni alpha)
+    (reify (beta weaken (SemNeu (NeuVar Z))) (b weaken (SemNeu (NeuVar Z))))
 
-reflect :: Nrm -> Neu -> Sem
-reflect NrmUni n = SemNeu n
-reflect (NrmPi alpha beta) n =
+reflect :: Sem -> Neu -> Sem
+reflect SemUni n = SemNeu n
+reflect (SemPi alpha beta) n =
   SemLam
-    undefined
+    alpha
     ( \rho a ->
         let b = thinnableNeu rho n
          in reflect undefined (NeuApp b (reify alpha a))
     )
-reflect (NrmNeu _) n = SemNeu n
+reflect (SemNeu _) n = SemNeu n
 
 normalization :: Semantics Sem Sem
 normalization =
@@ -63,11 +63,11 @@ normalization =
         SemNeu f -> \a -> SemNeu (NeuApp f (reify undefined a))
     }
 
-nbe :: Env Sem -> Trm -> Sem
-nbe = semantics normalization
+eval :: Env Sem -> Trm -> Sem
+eval = semantics normalization
 
-norm :: Nrm -> Trm -> Nrm
+norm :: Sem -> Trm -> Nrm
 norm alpha a =
   reify
     alpha
-    (nbe (Env {lookup = \x -> reflect undefined (NeuVar x)}) a)
+    (eval (Env {lookup = \x -> reflect undefined (NeuVar x)}) a)
