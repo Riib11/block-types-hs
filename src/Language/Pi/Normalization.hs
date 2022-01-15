@@ -19,8 +19,25 @@ data Neu
   | NeuApp Neu Nrm
   deriving (Show)
 
+fromNrm :: Nrm -> Trm
+fromNrm NrmUni = Uni
+fromNrm (NrmPi alpha beta) = Pi (fromNrm alpha) (fromNrm beta)
+fromNrm (NrmLam alpha b) = Lam (fromNrm alpha) (fromNrm b)
+fromNrm (NrmNeu n) = fromNeu n
+
+fromNeu :: Neu -> Trm
+fromNeu (NeuVar x) = Var x
+fromNeu (NeuApp f a) = App (fromNeu f) (fromNrm a)
+
+thinnableNrm :: Thinnable Nrm
+thinnableNrm rho NrmUni = NrmUni
+thinnableNrm rho (NrmPi alpha beta) = NrmPi (thinnableNrm rho alpha) (thinnableNrm (step rho) beta)
+thinnableNrm rho (NrmLam alpha b) = NrmLam (thinnableNrm rho alpha) (thinnableNrm (step rho) b)
+thinnableNrm rho (NrmNeu n) = NrmNeu $ thinnableNeu rho n
+
 thinnableNeu :: Thinnable Neu
-thinnableNeu rho n = undefined
+thinnableNeu rho (NeuVar x) = NeuVar (lookup rho x)
+thinnableNeu rho (NeuApp f a) = NeuApp (thinnableNeu rho f) (thinnableNrm rho a)
 
 data Sem
   = SemUni
@@ -29,7 +46,10 @@ data Sem
   | SemNeu Neu
 
 thinnableSem :: Thinnable Sem
-thinnableSem rho a = undefined
+thinnableSem rho SemUni = SemUni
+thinnableSem rho1 (SemPi alpha beta) = SemPi (thinnableSem rho1 alpha) (\rho2 a -> thinnableSem rho1 (beta rho2 a))
+thinnableSem rho1 (SemFun b) = SemFun (\rho2 a -> thinnableSem rho1 (b rho2 a))
+thinnableSem rho (SemNeu n) = SemNeu $ thinnableNeu rho n
 
 reify :: Sem -> Sem -> Nrm
 reify SemUni SemUni = NrmUni

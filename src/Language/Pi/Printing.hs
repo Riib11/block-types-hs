@@ -23,7 +23,7 @@ fresh = do
 printing :: Semantics Name Printer
 printing =
   Semantics
-    { thinnable = \w rho -> w,
+    { thinnable = \rho w -> w,
       uni = return "U",
       var = return,
       lam = \malpha mb -> do

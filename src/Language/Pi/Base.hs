@@ -68,6 +68,9 @@ weaken = Env {lookup = S}
 select :: Thinning -> Env dom -> Env dom
 select rho gamma = Env {lookup = \x -> lookup gamma (lookup rho x)}
 
+step :: Thinning -> Thinning
+step inc = select inc weaken
+
 -- Thinnable
 
 type Thinnable dom = Thinning -> dom -> dom
