@@ -68,10 +68,17 @@ weaken = Env {lookup = S}
 select :: Thinning -> Env dom -> Env dom
 select rho gamma = Env {lookup = \x -> lookup gamma (lookup rho x)}
 
+-- Thinnable
+
+type Thinnable dom = Thinning -> dom -> dom
+
+thinnableVar :: Thinnable Var
+thinnableVar inc x = lookup inc x
+
 -- Semantics
 
 data Semantics dom1 dom2 = Semantics
-  { thinnable :: dom1 -> Thinning -> dom1,
+  { thinnable :: Thinnable dom1,
     uni :: dom2,
     var :: dom1 -> dom2,
     pi :: dom2 -> (Thinning -> dom1 -> dom2) -> dom2,
@@ -91,38 +98,45 @@ semantics sem gamma (Lam alpha b) = lam sem alpha' b'
     alpha' = semantics sem gamma alpha
     b' rho a = semantics sem gamma' b
       where
-        gamma' = append a (mapEnv (\x -> thinnable sem x rho) gamma)
+        gamma' = append a (mapEnv (\x -> thinnable sem rho x) gamma)
 semantics sem gamma (Pi alpha beta) = pi sem alpha' beta'
   where
     alpha' = semantics sem gamma alpha
     beta' rho a = semantics sem gamma' beta
       where
-        gamma' = append a (mapEnv (\x -> thinnable sem x rho) gamma)
+        gamma' = append a (mapEnv (\x -> thinnable sem rho x) gamma)
+
+-- Renaming
 
 renaming :: Semantics Var Trm
 renaming =
   Semantics
-    { thinnable = \a rho -> lookup rho a,
+    { thinnable = \rho a -> lookup rho a,
       uni = Uni,
       var = Var,
-      pi = \alpha beta -> undefined,
+      pi = \alpha beta -> Pi alpha (beta weaken Z),
       lam = \alpha b -> Lam alpha (b weaken Z),
       app = App
     }
 
+ren :: Thinning -> Trm -> Trm
+ren = semantics renaming
+
+thinnableTrm :: Thinnable Trm
+thinnableTrm = ren
+
+-- Substitution
+
 substitution :: Semantics Trm Trm
 substitution =
   Semantics
-    { thinnable = \a rho -> ren rho a,
+    { thinnable = \rho a -> ren rho a,
       uni = Uni,
       var = id,
       pi = \alpha beta -> Pi alpha (beta weaken (Var Z)),
       lam = \alpha b -> Lam alpha (b weaken (Var Z)),
       app = App
     }
-
-ren :: Thinning -> Trm -> Trm
-ren = semantics renaming
 
 sub :: Env Trm -> Trm -> Trm
 sub = semantics substitution

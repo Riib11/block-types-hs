@@ -7,16 +7,67 @@ import Control.Monad.State as State
 import Language.Pi.Base
 import Prelude hiding (lookup, pi)
 
-normalization :: Semantics Trm Trm
+data Nrm
+  = NrmUni
+  | NrmPi Nrm Nrm
+  | NrmLam Nrm Nrm
+  | NrmNeu Neu
+  deriving (Show)
+
+data Neu
+  = NeuVar Var
+  | NeuApp Neu Nrm
+  deriving (Show)
+
+thinnableNeu :: Thinnable Neu
+thinnableNeu rho n = undefined
+
+data Sem
+  = SemUni
+  | SemPi Sem (Thinning -> Sem -> Sem)
+  | SemLam Sem (Thinning -> Sem -> Sem)
+  | SemNeu Neu
+
+reify :: Nrm -> Sem -> Nrm
+reify NrmUni SemUni = NrmUni
+reify NrmUni (SemPi alpha beta) =
+  NrmPi
+    (reify NrmUni alpha)
+    (reify NrmUni (beta weaken (SemNeu (NeuVar Z))))
+reify (NrmPi _ beta) (SemLam alpha b) =
+  NrmLam
+    (reify NrmUni alpha)
+    (reify beta (b weaken (SemNeu (NeuVar Z))))
+
+reflect :: Nrm -> Neu -> Sem
+reflect NrmUni n = SemNeu n
+reflect (NrmPi alpha beta) n =
+  SemLam
+    undefined
+    ( \rho a ->
+        let b = thinnableNeu rho n
+         in reflect undefined (NeuApp b (reify alpha a))
+    )
+reflect (NrmNeu _) n = SemNeu n
+
+normalization :: Semantics Sem Sem
 normalization =
   Semantics
-    { thinnable = \a rho -> ren rho a,
-      uni = Uni,
+    { thinnable = \rho a -> a,
+      uni = SemUni,
       var = id,
-      lam = \alpha b -> Lam alpha (b weaken (Var Z)),
-      pi = \alpha beta -> Pi alpha (beta weaken (Var Z)),
-      app = \(Lam alpha b) a -> sub (subEnv a) b
+      pi = \alpha beta -> SemPi alpha beta,
+      lam = \alpha b -> SemLam alpha b,
+      app = \case
+        SemLam alpha b -> b weaken
+        SemNeu f -> \a -> SemNeu (NeuApp f (reify undefined a))
     }
 
-norm :: Env Trm -> Trm -> Trm
-norm = semantics normalization
+nbe :: Env Sem -> Trm -> Sem
+nbe = semantics normalization
+
+norm :: Nrm -> Trm -> Nrm
+norm alpha a =
+  reify
+    alpha
+    (nbe (Env {lookup = \x -> reflect undefined (NeuVar x)}) a)
