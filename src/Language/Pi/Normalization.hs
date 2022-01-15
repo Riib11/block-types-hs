@@ -46,7 +46,7 @@ reflect (SemPi alpha beta) n =
     alpha
     ( \rho a ->
         let b = thinnableNeu rho n
-         in reflect undefined (NeuApp b (reify alpha a))
+         in reflect (beta idThinning a) (NeuApp b (reify alpha a))
     )
 reflect (SemNeu _) n = SemNeu n
 
