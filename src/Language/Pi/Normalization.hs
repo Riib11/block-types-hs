@@ -25,8 +25,11 @@ thinnableNeu rho n = undefined
 data Sem
   = SemUni
   | SemPi Sem (Thinning -> Sem -> Sem)
-  | SemLam Sem (Thinning -> Sem -> Sem)
+  | SemFun (Thinning -> Sem -> Sem)
   | SemNeu Neu
+
+thinnableSem :: Thinnable Sem
+thinnableSem rho a = undefined
 
 reify :: Sem -> Sem -> Nrm
 reify SemUni SemUni = NrmUni
@@ -34,7 +37,7 @@ reify SemUni (SemPi alpha beta) =
   NrmPi
     (reify SemUni alpha)
     (reify SemUni (beta weaken (SemNeu (NeuVar Z))))
-reify (SemPi _ beta) (SemLam alpha b) =
+reify (SemPi alpha beta) (SemFun b) =
   NrmLam
     (reify SemUni alpha)
     (reify (beta weaken (SemNeu (NeuVar Z))) (b weaken (SemNeu (NeuVar Z))))
@@ -42,8 +45,7 @@ reify (SemPi _ beta) (SemLam alpha b) =
 reflect :: Sem -> Neu -> Sem
 reflect SemUni n = SemNeu n
 reflect (SemPi alpha beta) n =
-  SemLam
-    alpha
+  SemFun
     ( \rho a ->
         let b = thinnableNeu rho n
          in reflect (beta idThinning a) (NeuApp b (reify alpha a))
@@ -53,14 +55,12 @@ reflect (SemNeu _) n = SemNeu n
 normalization :: Semantics Sem Sem
 normalization =
   Semantics
-    { thinnable = \rho a -> a,
+    { thinnable = thinnableSem,
       uni = SemUni,
       var = id,
       pi = \alpha beta -> SemPi alpha beta,
-      lam = \alpha b -> SemLam alpha b,
-      app = \case
-        SemLam alpha b -> b weaken
-        SemNeu f -> \a -> SemNeu (NeuApp f (reify undefined a))
+      lam = \alpha b -> SemFun b,
+      app = \(SemFun b) a -> b idThinning a
     }
 
 eval :: Env Sem -> Trm -> Sem
@@ -69,5 +69,5 @@ eval = semantics normalization
 norm :: Trm -> Trm -> Nrm
 norm alpha a =
   reify
-    (eval (Env {lookup = \x -> reflect undefined (NeuVar x)}) alpha)
-    (eval (Env {lookup = \x -> reflect undefined (NeuVar x)}) a)
+    (eval (Env {lookup = SemNeu . NeuVar}) alpha)
+    (eval (Env {lookup = SemNeu . NeuVar}) a)
