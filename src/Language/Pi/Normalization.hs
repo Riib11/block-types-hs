@@ -66,8 +66,8 @@ normalization =
 eval :: Env Sem -> Trm -> Sem
 eval = semantics normalization
 
-norm :: Sem -> Trm -> Nrm
+norm :: Trm -> Trm -> Nrm
 norm alpha a =
   reify
-    alpha
+    (eval (Env {lookup = \x -> reflect undefined (NeuVar x)}) alpha)
     (eval (Env {lookup = \x -> reflect undefined (NeuVar x)}) a)
